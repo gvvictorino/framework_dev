@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-orchestrator/decide.py
+decide.py
 
 Camada de decisão determinística do Orquestrador. Não invoca nada, não
 executa nada — só lê o estado dos arquivos do projeto e devolve, em JSON,
@@ -8,7 +8,11 @@ qual é a próxima ação correta. Quem executa a ação (via Task, no Claude
 Code) é a sessão principal (seguindo CLAUDE.md) ou o agente orquestrador-llm.
 
 Uso:
-    python orchestrator/decide.py <tarefa_id>
+    python3 <caminho-do-framework>/decide.py <tarefa_id>
+
+O caminho concreto é fixado pelo bootstrap no CLAUDE.md de cada projeto; na
+instalação padrão é $HOME/.claude-agent-framework/decide.py. O script opera
+sempre sobre o diretório de onde foi chamado, não sobre onde ele mesmo está.
 
 Saída (stdout, JSON), sempre um destes três formatos:
     {"acao": "invocar_agente", "agente": "<nome>"}
@@ -453,7 +457,7 @@ def main():
     if len(sys.argv) != 2:
         print(json.dumps({
             "acao": "escalar_humano",
-            "motivo": "Uso incorreto: python orchestrator/decide.py <tarefa_id>",
+            "motivo": "Uso incorreto: o script de decisão espera exatamente um argumento, o <tarefa_id>.",
         }))
         sys.exit(1)
 

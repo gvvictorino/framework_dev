@@ -97,7 +97,30 @@ if [[ "$MODO" == "--local" ]]; then
     echo "  = orchestrator/decide.py (já existe, mantido)"
   fi
 else
+  # O caminho é deliberadamente fixo: a arquitetura depende de uma cópia única do
+  # framework em local canônico, com os artefatos resolvidos relativos ao projeto
+  # chamador (decide.py usa ROOT = Path.cwd()). Derivar de SCRIPT_DIR devolveria
+  # variabilidade a um caminho que precisa ser o mesmo em todo projeto da máquina.
+  #
+  # Fixo não quer dizer presumido: se o framework não estiver instalado ali, o
+  # CLAUDE.md gerado teria um Passo 1 que falha, e a instrução do próprio CLAUDE.md
+  # nesse caso é PARAR — o projeto nasceria travado, sem sinal nenhum na hora.
   DECIDE_CMD="$PY_BIN \$HOME/.claude-agent-framework/decide.py"
+
+  if [[ ! -f "$HOME/.claude-agent-framework/decide.py" ]]; then
+    echo ""
+    echo "  AVISO — o framework não está instalado no caminho canônico."
+    echo ""
+    echo "  Esperado: $HOME/.claude-agent-framework/decide.py (não encontrado)"
+    echo "  Rodando de: $SCRIPT_DIR"
+    echo ""
+    echo "  O CLAUDE.md será gerado apontando para o caminho canônico, como deve ser."
+    echo "  Enquanto ele não existir, o Passo 1 do ciclo falha e nenhuma tarefa avança."
+    echo ""
+    echo "  Para corrigir, instale o framework no lugar esperado:"
+    echo "      git clone <este-repositório> $HOME/.claude-agent-framework"
+    echo ""
+  fi
 fi
 
 MARKER_BEGIN="<!-- BEGIN arquitetura-agentes-ia"

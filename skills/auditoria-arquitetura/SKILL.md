@@ -15,7 +15,7 @@ arquitetura de agentes deveria funcionar, e o roteiro que você segue quando é 
   orquestrador-llm. Cada um só invocado pela sessão principal via `Task`, nunca por outro
   subagente (subagentes não podem aninhar).
 - **Sessão principal** age como orquestrador conversacional, seguindo `CLAUDE.md` do projeto.
-- **`orchestrator/decide.py`** é a única fonte de decisão de roteamento — determinístico, sem
+- **O script de decisão (`decide.py`)** é a única fonte de decisão de roteamento — determinístico, sem
   julgamento de LLM, exceto para os 4 gatilhos fechados que escalam para `orquestrador-llm`.
 - **4 gatilhos**: `spec_ausente`, `spec_conflict`, `gap_sem_tarefa`, `tarefa_travada_N_ciclos`.
 - **Circuit breaker**: profundidade de cadeia de reaberturas (`supersedes`) ≥ 3 força
@@ -36,7 +36,7 @@ não aplicável (projeto muito novo para o mecanismo ter sido exercitado).
 ### 1. Roteamento determinístico
 - Confira o `CLAUDE.md` do projeto para saber o comando exato de decisão configurado (varia
   entre modo `--shared`, apontando para `~/.claude-agent-framework/decide.py`, e modo `--local`,
-  com `orchestrator/decide.py` dentro do próprio projeto). Rode esse comando para 2-3 tarefas
+  com uma cópia de `decide.py` dentro do próprio projeto). Rode esse comando para 2-3 tarefas
   reais do backlog atual e confirme que o agente retornado bate com o que você esperaria
   manualmente pela lógica documentada.
 - Verifique se `tech-stack.md` tem `lint_command`/`test_command` como comandos literais
