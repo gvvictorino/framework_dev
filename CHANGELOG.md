@@ -11,6 +11,31 @@ mudança manual), quem aplica é responsável por: incrementar `VERSION` e acres
 aqui, no mesmo commit. Sem isso, `atualizar.sh` não tem o que reportar ao rodar em outra
 máquina.
 
+## [1.0.3] — 2026-09-18
+
+Três correções derivadas da auditoria do projeto `analistajuridico`, todas verificadas contra o
+estado real antes de virar mudança.
+
+- `bootstrap-project.sh` passou a **validar** o caminho canônico em vez de presumi-lo. Em modo
+  `--shared` ele escreve `$HOME/.claude-agent-framework/decide.py` no `CLAUDE.md` gerado, e antes
+  fazia isso sem checar se o framework estava instalado ali. Quando não estava, o projeto nascia
+  com um Passo 1 que falha — e como a instrução do próprio `CLAUDE.md` nesse caso é PARAR, o
+  projeto ficava travado sem nenhum sinal na hora do bootstrap. O caminho continua fixo de
+  propósito: a arquitetura depende de uma cópia única do framework em local canônico, com os
+  artefatos resolvidos relativos ao projeto chamador (`ROOT = Path.cwd()`); derivá-lo de
+  `SCRIPT_DIR` devolveria variabilidade a um caminho que precisa ser igual em toda a máquina.
+  Fixo, porém não presumido — agora avisa e diz como corrigir.
+- `documentador` ganhou `Edit` nas tools e a regra explícita de ler `docs/architecture.md` inteiro
+  antes de escrever. O arquivo é acumulativo e o agente só tinha `Write`: a mesma classe de risco
+  que motivou acrescentar `Edit` ao `planner` e ao `llm-qualification` na 1.0.0. A perda não
+  aparece na primeira execução, com o arquivo vazio — aparece na segunda.
+- Referências a `orchestrator/decide.py` removidas da prosa dos agentes e das skills, e também da
+  **mensagem de uso do próprio `decide.py`**, que imprimia esse caminho na saída de erro. O rótulo
+  descrevia o modo `--local` enquanto a instalação padrão é `--shared`.
+
+Sem impacto em projetos em andamento: o contrato de saída de `decide.py` não mudou, e a única
+alteração de comportamento é um aviso novo no bootstrap.
+
 ## [1.0.2] — 2026-09-18
 
 Restauração da v1.0.1 e correção do bit de execução dos scripts. O commit `78b97c7`

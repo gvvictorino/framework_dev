@@ -14,7 +14,7 @@ sobrescrever — isso é intencional, não um bug. Se em algum momento este skil
 outro) começar a ler o Notion para tomar decisão de roteamento, isso viola a razão pela qual a
 opção "Notion como armazenamento real" foi descartada — não faça isso.
 
-`orchestrator/decide.py` nunca chama o Notion, direta ou indiretamente. Isso continua valendo
+O script de decisão nunca chama o Notion, direta ou indiretamente. Isso continua valendo
 depois deste skill existir.
 
 ## Pré-requisito
