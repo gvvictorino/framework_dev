@@ -11,6 +11,27 @@ mudança manual), quem aplica é responsável por: incrementar `VERSION` e acres
 aqui, no mesmo commit. Sem isso, `atualizar.sh` não tem o que reportar ao rodar em outra
 máquina.
 
+## [1.0.2] — 2026-09-18
+
+Restauração da v1.0.1 e correção do bit de execução dos scripts. O commit `78b97c7`
+("Add files via upload") substituiu o histórico do repositório e reverteu a `main` para o
+conteúdo da 1.0.0: `decide.py` voltou ao estado com os dois bugs de roteamento, e
+`tests/test_decide.py`, o relatório de auditoria e a entrada `[1.0.1]` deste changelog
+sumiram. A tag `v1.0.1` continuou existindo no remoto, mas apontando para uma linhagem órfã,
+inalcançável a partir de qualquer branch — quem clonasse o repositório recebia 1.0.0.
+Regressão medida rodando a suíte contra os dois `decide.py`: 16/16 na v1.0.1, 11/16 na `main`.
+
+- Conteúdo da 1.0.1 reintroduzido numa linhagem alcançável a partir da `main`, com a suíte de
+  regressão de volta em `tests/test_decide.py`.
+- Bit de execução restaurado em `setup-machine.sh`, `bootstrap-project.sh` e `atualizar.sh`
+  (`100644` → `100755`). O upload zerou a permissão nos três, o que quebrava as duas formas
+  documentadas de uso: o README instrui a rodar `~/.claude-agent-framework/setup-machine.sh`
+  diretamente, e `atualizar.sh` invoca `"$SCRIPT_DIR/setup-machine.sh" --force` na etapa de
+  propagação — ambos falhavam com `Permission denied`.
+
+Quem instalou a partir da `main` depois do upload está com 1.0.0 e precisa atualizar: os dois
+bugs de roteamento de `decide.py` descritos na 1.0.1 estavam ativos nessa cópia.
+
 ## [1.0.1] — 2026-09-18
 
 Correção de dois bugs de roteamento em `decide.py`. Ambos reproduzidos em projeto sintético
