@@ -34,6 +34,8 @@ gerar tarefas nesse formato, o script funciona sem alteração:
 
   decisions/orchestrator/index.md: lista YAML de entradas:
     id, gatilho, arquivos_envolvidos, status, supersedes (opcional)
+    `supersedes` aponta para o `id` da decisão que esta entrada reabre. É o
+    que define o comprimento da cadeia; entradas sem ele são independentes.
 
   gap-reports/<tarefa_id>.md: cabeçalho com linhas `componente:` e `status:`
   (não é frontmatter YAML — é lido por regex simples, conforme o formato já
@@ -68,6 +70,20 @@ GAP_REPORTS_DIR = ROOT / "docs" / "decisions" / "gap-reports"
 SPECS_DIR = ROOT / "docs" / "specs"
 
 PROFUNDIDADE_MAXIMA = 3
+
+# Qual agente produz cada categoria de spec, por diretório sob docs/specs/.
+# É o que permite a gatilho_spec_ausente distinguir "spec que ainda não foi
+# gerada" (roteamento determinístico) de "referência órfã" (divergência real).
+DONOS_DE_SPEC = {
+    "functional": "planner",
+    "design": "design",
+    "data-pipeline": "data-pipeline",
+    "qualification": "llm-qualification",
+}
+
+# Ordem de dependência entre specs: a funcional precede as de componente, e o
+# schema de data-pipeline precede a spec de qualification que o referencia.
+PRIORIDADE_ESPECIALISTAS = ("planner", "design", "data-pipeline", "llm-qualification")
 
 
 # ---------------------------------------------------------------------------
@@ -125,15 +141,78 @@ def extrair_campo_gap_report(path: Path, campo: str) -> str | None:
 # Gatilhos — cada um é uma função pura que retorna arquivos envolvidos ou None
 # ---------------------------------------------------------------------------
 
-def gatilho_spec_ausente(tarefa: dict):
-    """Alguma spec referenciada pela tarefa não existe no repositório."""
-    ausentes = [
-        s for s in tarefa.get("specs_referenciadas", [])
+def agente_dono_da_spec(spec_rel: str, tarefa: dict) -> str | None:
+    """
+    Qual agente especialista PRODUZ esta spec, se ela estiver faltando.
+    Retorna None quando nenhum agente do framework a produz — só nesse caso a
+    ausência é uma divergência real, que precisa do orquestrador-llm.
+
+    Specs por componente (design/data-pipeline/qualification) só têm dono se o
+    nome do arquivo corresponder ao componente da própria tarefa: uma tarefa
+    que referencia a spec de design de OUTRO componente é referência órfã, não
+    trabalho pendente do agente design nesta tarefa.
+    """
+    partes = Path(spec_rel).parts
+    if len(partes) < 3 or partes[0] != "docs" or partes[1] != "specs":
+        return None
+
+    categoria = partes[2]
+    dono = DONOS_DE_SPEC.get(categoria)
+    if dono is None:
+        return None
+
+    if categoria != "functional":
+        if Path(spec_rel).name != f"{tarefa.get('componente')}.md":
+            return None
+
+    return dono
+
+
+def especialista_para_spec_faltante(tarefa: dict) -> str | None:
+    """
+    Qual especialista precisa rodar para produzir as specs ausentes que esta
+    tarefa referencia. Determinístico: usa PRIORIDADE_ESPECIALISTAS (ordem de
+    dependência), nunca a ordem em que as specs aparecem na tarefa.
+    """
+    donos = {
+        agente_dono_da_spec(s, tarefa)
+        for s in tarefa.get("specs_referenciadas", [])
         if not (ROOT / s).exists()
-    ]
-    if ausentes:
-        return ausentes
+    }
+    donos.discard(None)
+
+    for agente in PRIORIDADE_ESPECIALISTAS:
+        if agente in donos:
+            return agente
     return None
+
+
+def gatilho_spec_ausente(tarefa: dict):
+    """
+    Dispara APENAS para specs ausentes que nenhum agente especialista produz.
+
+    Antes esta função devolvia TODA spec referenciada e inexistente. Como os
+    gatilhos são avaliados antes de mapear_tarefa_para_agente(), ela
+    interceptava o estado normal de uma tarefa recém-criada — o planner lista
+    docs/specs/design/<componente>.md em specs_referenciadas justamente porque
+    a spec ainda não existe — e mandava para o orquestrador-llm. Efeitos:
+
+      1. Todo o despacho para especialista em mapear_tarefa_para_agente() era
+         código inalcançável: os agentes planner, design, data-pipeline e
+         llm-qualification só entravam por decisão de LLM.
+      2. Cada componente novo custava uma chamada de LLM e uma entrada no
+         índice de decisões para reproduzir uma decisão já escrita em código.
+      3. Essas entradas alimentavam o circuit breaker de profundidade, que
+         escalava para humano um projeto sem nenhuma divergência real.
+
+    Spec ausente COM dono não é divergência — é o estado esperado antes do
+    especialista rodar, e o roteamento determinístico já sabe quem chamar.
+    """
+    orfas = [
+        s for s in tarefa.get("specs_referenciadas", [])
+        if not (ROOT / s).exists() and agente_dono_da_spec(s, tarefa) is None
+    ]
+    return orfas or None
 
 
 def gatilho_spec_conflict(tarefa: dict):
@@ -219,17 +298,40 @@ GATILHOS = {
 
 def profundidade_cadeia(gatilho: str, arquivos: list) -> int:
     """
-    Conta quantas decisões encadeadas via `supersedes` já existem para este
-    par (gatilho, arquivos). Usado para forçar escalated_human sem depender
-    de julgamento da LLM.
+    Comprimento da MAIOR cadeia de reaberturas encadeadas via `supersedes`
+    para este par (gatilho, arquivos). Usado para forçar escalated_human sem
+    depender de julgamento da LLM.
+
+    Antes esta função devolvia len(relacionadas) e nunca lia `supersedes`,
+    contrariando a própria docstring e o prompt do orquestrador-llm, que exige
+    gravar o campo. Efeito prático: três decisões INDEPENDENTES sobre os mesmos
+    arquivos — sem nenhuma reabertura — escalavam o projeto para intervenção
+    humana. Decisões sem `supersedes` são cadeias de comprimento 1 e não se
+    somam entre si.
     """
     entradas = carregar_lista_yaml(DECISIONS_INDEX)
-    relacionadas = [
-        e for e in entradas
+    relacionadas = {
+        e.get("id"): e
+        for e in entradas
         if e.get("gatilho") == gatilho
         and set(e.get("arquivos_envolvidos", [])) == set(arquivos)
-    ]
-    return len(relacionadas)
+        and e.get("id") is not None
+    }
+    if not relacionadas:
+        return 0
+
+    def comprimento(entrada_id, visitados: frozenset) -> int:
+        # `supersedes` aponta para a decisão que esta entrada substitui, então
+        # a cadeia é percorrida para trás. `visitados` impede laço infinito num
+        # índice corrompido (A supersedes B, B supersedes A).
+        if entrada_id in visitados:
+            return 0
+        anterior = relacionadas[entrada_id].get("supersedes")
+        if anterior is None or anterior not in relacionadas:
+            return 1
+        return 1 + comprimento(anterior, visitados | {entrada_id})
+
+    return max(comprimento(i, frozenset()) for i in relacionadas)
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +373,15 @@ def mapear_tarefa_para_agente(tarefa: dict, arquivo_atual: Path) -> str:
         return "implementador"
 
     # arquivo_atual == BACKLOG
+    # 1. Despacho guiado pelas specs que a tarefa REFERENCIA e que ainda não
+    #    existem. Este caminho era inalcançável: gatilho_spec_ausente
+    #    interceptava todos esses casos e os mandava ao orquestrador-llm.
+    especialista = especialista_para_spec_faltante(tarefa)
+    if especialista:
+        return especialista
+
+    # 2. Rede de segurança por TIPO da tarefa: cobre spec obrigatória que o
+    #    planner esqueceu de listar em specs_referenciadas.
     if not caminho_spec_functional(tarefa):
         return "planner"
     if tipo == "ui" and not caminho_spec_design_ok(tarefa):

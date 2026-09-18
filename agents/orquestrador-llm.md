@@ -19,7 +19,7 @@ Leia APENAS esses arquivos. Não releia o backlog inteiro, não avalie outras ta
 - **spec_conflict**: leia as specs conflitantes, determine qual prevalece (mais recente por `versao`, ou por hierarquia de dependência — ex: schema de data-pipeline prevalece sobre qualification, que depende dele) e decida a ação corretiva (qual spec precisa ser atualizada e por quem).
 - **gap_sem_tarefa**: leia o gap-report órfão, decida se é bug (criar tarefa corretiva) ou mudança de requisito (encaminhar de volta ao Planner). Se for bug: crie uma entrada em `/tasks/backlog.md` no formato padrão, e preencha obrigatoriamente o campo `origem_gap: <nome-do-arquivo-de-gap-report>` — sem esse campo, `decide.py` nunca reconhece que este gap-report já foi tratado e o gatilho dispara de novo a cada ciclo, mesmo depois de resolvido.
 - **tarefa_travada_N_ciclos**: leia a tarefa parada, determine causa provável (spec insuficiente? dependência não resolvida?) e decida próximo passo.
-- **spec_ausente**: identifique qual agente especialista precisa ser acionado para gerar a spec faltante.
+- **spec_ausente**: a spec referenciada não existe E nenhum agente do framework a produz — é referência órfã, não spec pendente. Decida se a referência está errada (corrigir o caminho em `specs_referenciadas`) ou se a spec é legítima e falta um responsável (encaminhar ao Planner, ou `escalated_human` se a categoria não couber em nenhum agente existente). Spec ausente de `docs/specs/{functional,design,data-pipeline,qualification}/` para o componente da própria tarefa NUNCA chega até você: `decide.py` despacha o especialista direto, sem custo de LLM.
 
 ## Saída obrigatória — sempre grave a decisão antes de agir
 
