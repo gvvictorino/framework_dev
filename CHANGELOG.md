@@ -11,6 +11,60 @@ mudança manual), quem aplica é responsável por: incrementar `VERSION` e acres
 aqui, no mesmo commit. Sem isso, `atualizar.sh` não tem o que reportar ao rodar em outra
 máquina.
 
+## [1.0.7] — 2026-09-19
+
+Aplicação da **P6** e da parte de alto risco da **P2** da auditoria de 2026-09-19. As duas são
+independentes entre si; foram agrupadas por serem pequenas e por atacarem o mesmo modo de
+falha — o sistema quebrando em silêncio, sem sinal utilizável para quem opera.
+
+**P6 — `decide.py` passa a honrar o contrato de saída também no erro.**
+
+`carregar_lista_yaml` e `carregar_frontmatter` chamavam `yaml.safe_load` sem tratamento, e
+`localizar_tarefa` presumia que cada item da lista era um mapeamento. Qualquer arquivo de
+estado malformado produzia traceback e **stdout vazio** — enquanto a docstring do módulo
+prometia "sempre um destes três formatos". A sessão principal, seguindo o template, apenas
+para e reporta, sem motivo que dê para agir. O cenário não é exótico: quem escreve
+`backlog.md`, `in-progress.md`, `done.md` e `index.md` são agentes de LLM.
+
+- Exceção `EstadoMalformado`, levantada pelos leitores e capturada no ponto de entrada, que a
+  converte em `{"acao": "escalar_humano", "motivo": "..."}` com exit 1 — mesmo tratamento já
+  dado à ausência de `pyyaml`. O motivo nomeia o arquivo e o defeito concreto.
+- A validação de forma ficou em `carregar_lista_yaml`, não em cada chamador: os três call
+  sites tratam cada item como dict e chamariam `.get` nele.
+- `profundidade_cadeia` valida `arquivos_envolvidos` antes de comparar conjuntos. Entrada
+  torta no índice **não** é ignorada: pular a entrada faria o circuit breaker falhar ABERTO,
+  que é exatamente o modo de falha que ele existe para evitar.
+- Suíte: 16 → 19 casos. Os três novos travam a regressão pelo stdout — `json.loads` de string
+  vazia falha alto, em vez de virar um "esperado != obtido" silencioso.
+
+Dois dos casos novos nasceram errados e foram corrigidos durante a verificação, o que vale
+registrar porque a armadilha é fácil de repetir: `# Backlog` no topo de um arquivo YAML é
+comentário válido, não "prosa em volta"; e o índice de decisões só é lido quando algum gatilho
+dispara, então testá-lo exige uma tarefa que acione gatilho, não uma tarefa saudável.
+
+**P2 (parte de alto risco) — `Edit` no `orquestrador-llm`.**
+
+O agente escrevia em dois arquivos acumulativos com apenas `Read, Write`. Em
+`/tasks/backlog.md` o risco é o mesmo que motivou dar `Edit` ao `planner` na v1.0.0. Em
+`docs/decisions/orchestrator/index.md` é pior que em qualquer outro arquivo do framework: um
+`Write` cego apaga o índice inteiro, e com ele as cadeias de `supersedes` — o circuit breaker
+de reaberturas passa a falhar aberto, sem nunca mais escalar para humano e sem nenhum sinal.
+A mitigação até aqui era puramente textual, num prompt que ao mesmo tempo mandava "reescreva
+com a nova entrada acrescentada ao final".
+
+- `tools:` passa a `Read, Write, Edit`.
+- As instruções dos dois arquivos acumulativos passam a exigir `Edit` explicitamente, com a
+  consequência declarada. `Write` continua legítimo — e correto — para o arquivo de decisão
+  detalhado, que nasce novo a cada vez, e para criar `index.md` na primeira decisão do
+  projeto, quando não há o que editar.
+
+Sem impacto em projetos em andamento: o contrato de saída de `decide.py` não mudou para
+nenhuma entrada válida (19/19, incluindo os 16 casos anteriores), e a mudança no orquestrador
+é de permissão e de prompt, não de formato de arquivo.
+
+Continuam pendentes da auditoria de 2026-09-19: P2 para `design` e `data-pipeline`, e P3, P4,
+P5, P7, P8, P9.
+
 ## [1.0.6] — 2026-09-19
 
 Padroniza o ambiente de execução em **Linux — WSL nas estações Windows** e passa a garantir os

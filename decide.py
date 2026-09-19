@@ -20,6 +20,11 @@ Saída (stdout, JSON), sempre um destes três formatos:
      "arquivos_envolvidos": [...]}
     {"acao": "escalar_humano", "motivo": "<texto>"}
 
+O contrato vale também no erro: arquivo de estado com YAML inválido ou forma
+inesperada vira `escalar_humano` com o arquivo e o detalhe no motivo, nunca
+traceback com stdout vazio. Nesse caso, e no de pyyaml ausente, o exit code é 1
+— o JSON continua no stdout, e é ele que a sessão principal deve reportar.
+
 ASSUNÇÕES DE FORMATO — documentadas aqui porque não existiam antes deste
 arquivo. Se as specs de agente (.claude/agents/*.md) forem ajustadas para
 gerar tarefas nesse formato, o script funciona sem alteração:
@@ -100,13 +105,60 @@ PRIORIDADE_ESPECIALISTAS = ("planner", "design", "data-pipeline", "llm-qualifica
 # Leitura de estado — funções puras, sem efeito colateral
 # ---------------------------------------------------------------------------
 
+class EstadoMalformado(Exception):
+    """
+    Arquivo de estado do projeto ilegível: YAML inválido ou forma inesperada.
+
+    Levantada pelos leitores e capturada no ponto de entrada, que a converte na
+    saída `escalar_humano` que a docstring do módulo promete. Sem isso, um
+    arquivo escrito torto — cenário plausível, já que quem os escreve são
+    agentes de LLM — produzia traceback e stdout VAZIO, e a sessão principal
+    parava sem motivo utilizável para reportar.
+    """
+
+
+def _rotulo(path: Path) -> str:
+    """Caminho legível para mensagem de erro, relativo ao projeto quando possível."""
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _detalhe(erro: Exception) -> str:
+    """Achata a mensagem multilinha do pyyaml numa linha só, para caber no JSON."""
+    return " ".join(str(erro).split())
+
+
 def carregar_lista_yaml(path: Path) -> list:
-    """Carrega um arquivo de lista YAML pura. Retorna [] se não existir."""
+    """
+    Carrega um arquivo de lista YAML pura. Retorna [] se não existir.
+
+    Valida a forma aqui, e não em cada chamador: os três call sites (busca de
+    tarefa, varredura de `origem_gap` e índice de decisões) tratam cada item
+    como dict e chamariam `.get` nele.
+    """
     if not path.exists():
         return []
     conteudo = path.read_text(encoding="utf-8")
-    dados = yaml.safe_load(conteudo)
-    return dados or []
+    try:
+        dados = yaml.safe_load(conteudo)
+    except yaml.YAMLError as e:
+        raise EstadoMalformado(f"{_rotulo(path)} não é YAML válido: {_detalhe(e)}")
+    if dados is None:
+        return []
+    if not isinstance(dados, list):
+        raise EstadoMalformado(
+            f"{_rotulo(path)} deveria ser uma lista YAML pura, sem prosa em volta — "
+            f"veio {type(dados).__name__}"
+        )
+    for i, item in enumerate(dados):
+        if not isinstance(item, dict):
+            raise EstadoMalformado(
+                f"{_rotulo(path)}: a entrada de índice {i} deveria ser um mapeamento "
+                f"de campos — veio {type(item).__name__}"
+            )
+    return dados
 
 
 def carregar_frontmatter(path: Path) -> dict:
@@ -117,7 +169,20 @@ def carregar_frontmatter(path: Path) -> dict:
     m = re.match(r"^\s*---\s*\n(.*?)\n---\s*\n", conteudo, re.DOTALL)
     if not m:
         return {}
-    return yaml.safe_load(m.group(1)) or {}
+    try:
+        dados = yaml.safe_load(m.group(1))
+    except yaml.YAMLError as e:
+        raise EstadoMalformado(
+            f"o frontmatter de {_rotulo(path)} não é YAML válido: {_detalhe(e)}"
+        )
+    if dados is None:
+        return {}
+    if not isinstance(dados, dict):
+        raise EstadoMalformado(
+            f"o frontmatter de {_rotulo(path)} deveria ser um mapeamento — "
+            f"veio {type(dados).__name__}"
+        )
+    return dados
 
 
 def localizar_tarefa(tarefa_id: str):
@@ -320,6 +385,16 @@ def profundidade_cadeia(gatilho: str, arquivos: list) -> int:
     somam entre si.
     """
     entradas = carregar_lista_yaml(DECISIONS_INDEX)
+    for e in entradas:
+        envolvidos = e.get("arquivos_envolvidos", [])
+        if not isinstance(envolvidos, list):
+            # Não dá para ignorar a entrada torta e seguir: o breaker falharia
+            # ABERTO, que é exatamente o modo de falha que ele existe para evitar.
+            raise EstadoMalformado(
+                f"{_rotulo(DECISIONS_INDEX)}: a entrada id={e.get('id')!r} tem "
+                f"`arquivos_envolvidos` do tipo {type(envolvidos).__name__}, "
+                f"esperado lista"
+            )
     relacionadas = {
         e.get("id"): e
         for e in entradas
@@ -467,7 +542,17 @@ def main():
         }))
         sys.exit(1)
 
-    resultado = decidir(sys.argv[1])
+    try:
+        resultado = decidir(sys.argv[1])
+    except EstadoMalformado as e:
+        # Mesmo tratamento dado à ausência de pyyaml: JSON válido no stdout e
+        # exit 1. A sessão principal precisa de um motivo reportável, não de um
+        # traceback no stderr com stdout vazio.
+        print(json.dumps({
+            "acao": "escalar_humano",
+            "motivo": f"Estado do projeto ilegível — {e}",
+        }, ensure_ascii=False))
+        sys.exit(1)
     print(json.dumps(resultado, ensure_ascii=False))
 
 

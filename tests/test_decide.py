@@ -16,7 +16,16 @@ from pathlib import Path
 DECIDE = str(Path(__file__).resolve().parent.parent / "decide.py")
 falhas = []
 
-def rodar(nome, arquivos, tarefa_id, esperado):
+total = 0
+
+def rodar(nome, arquivos, tarefa_id, esperado, motivo_contem=None):
+    """
+    `motivo_contem`: trecho que o campo `motivo` precisa conter. Existe para os
+    casos de estado malformado, onde acertar a acao nao basta — o valor do
+    tratamento esta em o motivo dizer QUAL arquivo esta torto.
+    """
+    global total
+    total += 1
     with tempfile.TemporaryDirectory() as d:
         raiz = Path(d)
         for rel, conteudo in arquivos.items():
@@ -25,10 +34,17 @@ def rodar(nome, arquivos, tarefa_id, esperado):
             alvo.write_text(textwrap.dedent(conteudo), encoding="utf-8")
         out = subprocess.run([sys.executable, DECIDE, tarefa_id],
                              cwd=raiz, capture_output=True, text=True)
+        # json.loads falha alto de proposito: stdout vazio e a regressao que os
+        # casos 17-19 travam, e ela nao deve passar por "esperado != obtido".
         got = json.loads(out.stdout)
     real = got.get("agente") or got.get("acao")
-    marca = "ok  " if real == esperado else "FALHA"
-    if real != esperado:
+    ok = real == esperado
+    if ok and motivo_contem is not None:
+        ok = motivo_contem in got.get("motivo", "")
+        if not ok:
+            real = f"{real} (motivo sem {motivo_contem!r})"
+    marca = "ok  " if ok else "FALHA"
+    if not ok:
         falhas.append((nome, esperado, real, got))
     print(f"{marca} {nome}: esperado={esperado} obtido={real}")
 
@@ -247,8 +263,50 @@ rodar("travada 5 ciclos", {
 # 16. tarefa inexistente -> escalar_humano
 rodar("tarefa inexistente", {"tasks/backlog.md": "[]\n"}, "T-999", "escalar_humano")
 
+# ---------------------------------------------------------------------------
+# 17-19. Contrato de saida no erro (v1.0.7). Antes: traceback e stdout vazio,
+# que a docstring de decide.py contradizia ao prometer "sempre um destes tres
+# formatos". Quem escreve esses arquivos e agente de LLM — YAML torto e cenario
+# de operacao normal, nao corrupcao exotica.
+# ---------------------------------------------------------------------------
+
+# 17. lista de itens que nao sao mapeamentos -> escalar_humano nomeando o
+# arquivo. Antes: AttributeError em `tarefa.get`, porque localizar_tarefa
+# presumia dict em cada entrada.
+rodar("backlog com itens nao-mapeamento", {
+    "tasks/backlog.md": """\
+    - T-001
+    - T-002
+    """,
+}, "T-001", "escalar_humano", motivo_contem="tasks/backlog.md")
+
+# 18. YAML sintaticamente invalido -> escalar_humano, nao AttributeError
+rodar("backlog YAML invalido", {
+    "tasks/backlog.md": "- id: T-001\n   componente: [checkout\n",
+}, "T-001", "escalar_humano", motivo_contem="tasks/backlog.md")
+
+# 19. indice de decisoes torto -> escalar_humano, e nao breaker falhando aberto.
+# Usa a tarefa de spec orfa do caso 4 porque o indice so e lido quando algum
+# gatilho dispara — com tarefa saudavel, profundidade_cadeia nem roda.
+rodar("indice de decisoes torto", {
+    "tasks/backlog.md": """\
+    - id: T-002
+      componente: checkout
+      tipo: ui
+      specs_referenciadas:
+        - docs/specs/legado/checkout.md
+      status: pending
+    """,
+    "docs/decisions/orchestrator/index.md": """\
+    - id: 1
+      gatilho: spec_ausente
+      arquivos_envolvidos: docs/specs/legado/checkout.md
+      status: resolved
+    """,
+}, "T-002", "escalar_humano", motivo_contem="index.md")
+
 print()
-print(f"{16 - len(falhas)}/16 passaram")
+print(f"{total - len(falhas)}/{total} passaram")
 for nome, esp, real, got in falhas:
     print(f"  FALHA {nome}: esperado={esp} obtido={real} :: {got}")
 sys.exit(1 if falhas else 0)
