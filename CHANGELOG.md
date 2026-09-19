@@ -11,6 +11,31 @@ mudança manual), quem aplica é responsável por: incrementar `VERSION` e acres
 aqui, no mesmo commit. Sem isso, `atualizar.sh` não tem o que reportar ao rodar em outra
 máquina.
 
+## [1.0.4] — 2026-09-19
+
+Declaração das dependências de execução no `README.md`, que não as registrava em lugar nenhum,
+e um documento de contexto para quem abre o repositório noutra estação.
+
+- Seção **Requisitos** acrescentada: `git`, `bash`, Python 3.10+ e `pyyaml`. A omissão do
+  `pyyaml` era a mais cara das quatro. `decide.py` trata a ausência com elegância — devolve
+  `escalar_humano` com o motivo correto — e é justamente por isso que o sintoma engana: numa
+  máquina recém-instalada, *toda* tarefa cai em intervenção humana, o que se parece com um
+  projeto mal configurado, não com uma biblioteca faltando.
+- O piso de Python 3.10 não é arbitrário, mas também não estava escrito: `decide.py` anota
+  assinaturas com `X | None` sem `from __future__ import annotations`, então o interpretador
+  avalia a anotação na definição e a 3.9 falha ao carregar o módulo.
+- `pip install pyyaml` acrescentado também ao bloco de **Uso básico**, que é o trecho que as
+  pessoas copiam na prática.
+- **`docs/contexto-claude.md`** criado: o que uma estação nova precisa saber *antes* de mexer
+  aqui e que não cabe em changelog nem em README — configuração por máquina (incluindo
+  `core.filemode false` no Windows), o endereço noreply obrigatório para `git push`, o
+  incidente de histórico que gerou a v1.0.2 e as decisões de arquitetura que os arquivos não
+  revelam isoladamente. Referenciado no fim do README.
+
+Sem impacto em projetos em andamento: a mudança é só de documentação, nenhum arquivo de
+comportamento foi tocado. `setup-machine.sh` segue sem instalar o `pyyaml` de propósito — como
+instalar (`pip`, `pipx`, distribuição, virtualenv) continua sendo decisão de quem instala.
+
 ## [1.0.3] — 2026-09-18
 
 Três correções derivadas da auditoria do projeto `analistajuridico`, todas verificadas contra o

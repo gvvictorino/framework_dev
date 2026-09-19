@@ -46,9 +46,31 @@ VERSION           versão semântica atual
 CHANGELOG.md      histórico de mudanças
 ```
 
+## Requisitos
+
+- **git** — não é opcional nem detalhe de instalação: todo o estado da arquitetura (specs,
+  backlog, decisões) vive em arquivos versionados, e `atualizar.sh` busca novas versões por
+  `git pull`.
+- **bash** — os três scripts (`setup-machine.sh`, `bootstrap-project.sh`, `atualizar.sh`).
+- **Python 3.10 ou superior** — `decide.py` anota assinaturas com `X | None`, sintaxe que o
+  interpretador avalia no momento da definição. Em 3.9 o script não chega a rodar.
+- **pyyaml** — `decide.py` lê o backlog e o frontmatter das specs em YAML.
+
+```bash
+pip install pyyaml
+```
+
+Nenhum dos scripts instala o `pyyaml`; a forma de instalar fica a seu critério (`pip`, `pipx`,
+gerenciador da distribuição, virtualenv). Sem a biblioteca, `decide.py` não quebra — devolve
+`escalar_humano` com o motivo explícito. O efeito prático, porém, é que **toda** decisão de
+roteamento para em intervenção humana até você instalá-la, e o sintoma aparece como um agente
+pedindo ajuda, não como erro de instalação.
+
 ## Uso básico
 
 ```bash
+pip install pyyaml
+
 git clone <este-repositório> ~/.claude-agent-framework
 ~/.claude-agent-framework/setup-machine.sh
 
@@ -58,3 +80,7 @@ git clone <este-repositório> ~/.claude-agent-framework
 Detalhes de funcionamento — regras de cada agente, formato dos arquivos de estado, os quatro
 gatilhos do roteamento determinístico — estão documentados dentro dos próprios arquivos em
 `agents/` e em `decide.py`.
+
+Quem vai **trabalhar neste repositório**, e não apenas usá-lo, deve ler antes
+[`docs/contexto-claude.md`](./docs/contexto-claude.md): o que configurar em cada estação, por
+que o push exige endereço noreply, e as armadilhas de histórico que já custaram uma versão.
