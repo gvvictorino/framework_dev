@@ -11,6 +11,50 @@ mudança manual), quem aplica é responsável por: incrementar `VERSION` e acres
 aqui, no mesmo commit. Sem isso, `atualizar.sh` não tem o que reportar ao rodar em outra
 máquina.
 
+## [1.0.5] — 2026-09-19
+
+Correção da P1 da auditoria de 2026-09-19: o agente `revisor-qualidade` era inalcançável pelo
+roteamento determinístico. Verificado em projeto sintético antes e depois.
+
+O Implementador marcava `implementado: true` e, no passo seguinte do mesmo prompt, movia a
+tarefa para `done.md`. Mas `decide.py` só lê esse campo enquanto a tarefa está em
+`in-progress.md`; tudo que está em `done.md` roteia para o Documentador. O estado que aciona o
+Revisor existia apenas dentro de uma execução do Implementador, nunca entre duas invocações —
+o passo 3 do prompt se justificava dizendo que o campo serve "para rotear a próxima chamada
+para o Revisor", e o passo 4 destruía exatamente isso. Em consequência, o Documentador rodava
+sem o gap-report `ok` que o próprio prompt dele exige, e `done.md` acumulava tarefa nunca
+revisada.
+
+- `implementador`: o passo 4 deixa de mover a tarefa. Ele marca `implementado: true`, grava o
+  resumo de uma linha e PARA. A entrada em `in-progress.md` com o campo marcado passa a ser,
+  explicitamente, a fila de revisão.
+- `revisor-qualidade`: ganhou `Edit` e o fechamento do ciclo. Com gap-report `ok`, move a
+  entrada para `done.md`; com `divergente` ou `falha_tecnica`, devolve `implementado: false`,
+  incrementa `ciclos_sem_progresso` e preenche `origem_gap`. Sem devolver o campo haveria laço
+  — `decide.py` rotearia ao Revisor de novo para re-revisar código que ninguém mudou; sem
+  `origem_gap`, o gatilho `gap_sem_tarefa` abriria uma segunda tarefa para a divergência que já
+  voltou ao Implementador.
+- `decide.py`: só a docstring do módulo, descrevendo a semântica ampliada de `origem_gap` (o
+  gap que a tarefa trata, tenha ela nascido dele ou sido devolvida por ele) e o novo ponto de
+  parada de `implementado`. Nenhuma linha de comportamento alterada.
+
+Escolha de desenho, entre as duas opções que a auditoria deixou em aberto: os três arquivos de
+`/tasks/` são estado de fluxo, não de responsável. Tarefa aguardando revisão continua em
+andamento — o trabalho não foi aceito. A granularidade de "com quem está" fica no campo
+`implementado`, que já existia e já é espelhado como checkbox pela skill `sincronizar-notion`.
+A alternativa (rotear tarefa em `done.md` pela existência do gap-report) manteria `done.md`
+significando "não necessariamente pronto" e exigiria mover tarefa reprovada de volta de `done`.
+
+Migração para projetos em andamento: tarefa que já esteja em `done.md` sem gap-report
+correspondente foi fechada sem revisão sob o comportamento antigo. Se quiser revisá-la, mova a
+entrada de volta para `in-progress.md` mantendo `implementado: true`. O contrato de saída de
+`decide.py` não mudou.
+
+Esta correção não é coberta pela suíte: o defeito estava no contrato entre prompt e roteador,
+não dentro de `decide.py`. Os dois casos relevantes ("in-progress implementado →
+revisor-qualidade" e "done → documentador") sempre passaram isolados, e é precisamente por
+isso que o bug sobreviveu — nada encadeava o que o Implementador fazia entre eles.
+
 ## [1.0.4] — 2026-09-19
 
 Declaração das dependências de execução no `README.md`, que não as registrava em lugar nenhum,

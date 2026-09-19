@@ -28,11 +28,17 @@ gerar tarefas nesse formato, o script funciona sem alteração:
   (sem prosa em volta), campos por tarefa:
     id, componente, tipo, specs_referenciadas, status, gerado_por
     requer_qualificacao: bool          # NOVO — só existe se tipo pedir LLM
-    origem_gap: str | None             # NOVO — preenchido se a tarefa nasceu
-                                        # de um gap-report divergente, aponta
-                                        # para o nome do arquivo de gap-report
-    implementado: bool                 # NOVO — o Implementador marca true
-                                        # ao terminar, antes do Revisor rodar
+    origem_gap: str | None             # nome do arquivo de gap-report que esta
+                                        # tarefa está tratando — seja porque
+                                        # nasceu dele (tarefa corretiva criada
+                                        # pelo orquestrador) ou porque o Revisor
+                                        # a devolveu ao Implementador por causa
+                                        # dele. É o que marca o gap como já
+                                        # reivindicado para gatilho_gap_sem_tarefa
+    implementado: bool                 # o Implementador marca true e PARA; a
+                                        # tarefa fica em in-progress.md como fila
+                                        # de revisão. Quem move para done.md é o
+                                        # Revisor, e só com gap-report `ok`
 
   tech-stack.md: frontmatter YAML (delimitado por ---) com chave `componentes`
 
