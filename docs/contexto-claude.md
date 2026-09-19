@@ -1,6 +1,6 @@
 # Contexto de trabalho — para quem abrir este repositório noutra estação
 
-Última revisão: **2026-09-19** (framework na v1.0.4).
+Última revisão: **2026-09-19** (framework na v1.0.6).
 
 Este arquivo existe porque o `CHANGELOG.md` responde *o que mudou* e o `README.md` responde
 *como usar*, mas nenhum dos dois responde *o que você precisa saber antes de mexer aqui*.
@@ -33,20 +33,30 @@ teste frágil. Não remova nenhum caso sem entender que bug ele protege.
 
 ## 2. O que o git não traz junto
 
-O clone não basta. Duas coisas precisam ser configuradas por estação:
+O clone não basta. O que cada estação precisa ter antes de trabalhar:
 
 **`pyyaml` e Python ≥ 3.10** — declarados no README desde a v1.0.4. O piso de 3.10 não é
 arbitrário: `decide.py` anota assinaturas com `X | None` sem `from __future__ import
 annotations`, então o interpretador avalia a anotação na definição e a 3.9 falha ao carregar o
 módulo.
 
-**Em Windows, `git config core.filemode false`** — sem isso, `setup-machine.sh`,
-`bootstrap-project.sh` e `atualizar.sh` aparecem permanentemente como modificados
-(`100755` → `100644`), porque o sistema de arquivos não representa o bit de execução. É diff
-fantasma: não commite essa "mudança". O bit `755` nos três é obrigatório e foi restaurado na
-v1.0.2 justamente por ter sido zerado uma vez — o README manda rodar `setup-machine.sh`
-diretamente, e `atualizar.sh` o invoca com `--force`; sem o bit, ambos falham com
-`Permission denied`.
+**Ambiente Linux — em estação Windows, WSL.** Desde a v1.0.6 esse é o padrão declarado, não
+uma preferência. Clone e trabalhe dentro do sistema de arquivos do Linux (`~/...`), não em
+`/mnt/c`. O bit `755` dos três `.sh` é obrigatório: o README manda rodar `setup-machine.sh`
+diretamente e `atualizar.sh` o invoca com `--force`; sem o bit, os dois falham com
+`Permission denied`. Ele foi zerado uma vez (ver seção 4) e restaurado na v1.0.2.
+
+Fins de linha são garantidos pelo `.gitattributes` desde a v1.0.6 — um CRLF no shebang faz o
+bash falhar com `bad interpreter: ^M`, erro que não diz o que de fato aconteceu. Não
+sobrescreva essas regras com configuração local.
+
+**Se por algum motivo você estiver em Windows nativo** (Git Bash, PowerShell — fora do padrão):
+rode `git config core.filemode false`, senão os três `.sh` aparecem permanentemente como
+modificados (`100755` → `100644`), porque o sistema de arquivos não representa o bit de
+execução. É diff fantasma — não commite essa "mudança". Saiba também que os caminhos gravados
+em `arquivos_envolvidos` saem com barra invertida, o que impede o circuit breaker de casar
+decisões gravadas noutra plataforma (ver P9 em `docs/decisions/auditoria/2026-09-19.md`). É a
+razão técnica por trás da padronização.
 
 ## 3. Push para o GitHub exige endereço noreply
 

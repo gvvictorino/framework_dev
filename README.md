@@ -48,6 +48,18 @@ CHANGELOG.md      histórico de mudanças
 
 ## Requisitos
 
+**Ambiente padrão: Linux.** Em estações Windows, isso significa **WSL** (Ubuntu ou
+equivalente) — não Git Bash, não PowerShell. Os comandos abaixo, os caminhos canônicos
+(`~/.claude-agent-framework`, `~/.claude/agents`) e os três scripts assumem um shell Linux.
+Rodar fora desse padrão funciona em alguns pontos e falha em outros, de formas que nem sempre
+se anunciam — bit de execução que o sistema de arquivos não guarda, separador de caminho
+diferente nos registros de decisão. Padronizar a plataforma remove essa classe inteira de
+divergência entre máquinas, que é justamente o que esta arquitetura existe para evitar.
+
+Trabalhe com o repositório dentro do sistema de arquivos do Linux (`~/...`), não no do Windows
+montado em `/mnt/c` — ali o desempenho cai e as permissões de arquivo não se comportam como o
+Linux espera.
+
 - **git** — não é opcional nem detalhe de instalação: todo o estado da arquitetura (specs,
   backlog, decisões) vive em arquivos versionados, e `atualizar.sh` busca novas versões por
   `git pull`.

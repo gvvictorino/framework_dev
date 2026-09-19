@@ -11,6 +11,42 @@ mudança manual), quem aplica é responsável por: incrementar `VERSION` e acres
 aqui, no mesmo commit. Sem isso, `atualizar.sh` não tem o que reportar ao rodar em outra
 máquina.
 
+## [1.0.6] — 2026-09-19
+
+Padroniza o ambiente de execução em **Linux — WSL nas estações Windows** e passa a garantir os
+fins de linha pelo repositório.
+
+- **README**: a seção Requisitos abre declarando a plataforma padrão. WSL, não Git Bash nem
+  PowerShell. Inclui a orientação de manter o repositório no sistema de arquivos do Linux
+  (`~/...`) em vez de `/mnt/c`, onde o desempenho cai e as permissões não se comportam como o
+  Linux espera.
+- **`.gitattributes`** criado, fixando `eol=lf`. Um CRLF no shebang faz o bash falhar com
+  `bad interpreter: /usr/bin/env bash^M` — erro que não descreve a causa e que só aparece na
+  hora de instalar, não na de clonar. Sem essas regras, a política de fim de linha valia o que
+  o `core.autocrlf`/`core.eol` de cada máquina dissesse; agora é propriedade do repositório.
+  Medição antes da mudança: neste Windows, apesar de `core.autocrlf=true` no nível de sistema,
+  o checkout entregava LF — ou seja, não havia quebra ativa. A regra é prevenção contra
+  configuração de máquina, não correção de defeito observado.
+- **`docs/contexto-claude.md`**: a seção 2 deixa de tratar Windows nativo como cenário normal.
+  O caminho padrão passa a ser Linux/WSL, e a orientação de `core.filemode false` fica marcada
+  como exceção fora do padrão, junto com a consequência técnica dela.
+
+Motivação, registrada porque não é óbvia: a auditoria de 2026-09-19 encontrou (P9) que dois
+gatilhos de `decide.py` montam `arquivos_envolvidos` com o separador de caminho do sistema
+operacional, enquanto o circuit breaker compara esses caminhos por igualdade literal de string.
+Uma decisão gravada no Linux nunca casa com a mesma divergência avaliada no Windows, e o
+breaker falha **aberto** — nunca escala para humano. Padronizar a plataforma elimina o gatilho
+prático dessa e de outras divergências do mesmo tipo (bit de execução, fim de linha).
+
+O que isso **não** resolve: a inconsistência de P9 continua no código, apenas deixou de ser
+alcançável enquanto o padrão for respeitado. A proposta segue aberta no relatório, rebaixada de
+prioridade alta para média. Uma única máquina fora do padrão traz o problema de volta, em
+silêncio.
+
+Sem impacto em projetos em andamento: nenhuma mudança de comportamento em `decide.py` ou nos
+agentes. Quem já tem clone em Windows nativo e quiser migrar deve reclonar dentro do WSL, e não
+copiar a árvore por `/mnt/c` — a cópia carrega o bit de execução perdido.
+
 ## [1.0.5] — 2026-09-19
 
 Correção da P1 da auditoria de 2026-09-19: o agente `revisor-qualidade` era inalcançável pelo

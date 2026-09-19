@@ -1,0 +1,19 @@
+# O ambiente padrão de execução deste framework é Linux — nativo ou WSL em estações Windows.
+#
+# `setup-machine.sh`, `bootstrap-project.sh` e `atualizar.sh` são interpretados por bash, e
+# `decide.py` roda sob o Python do Linux. Um único CRLF no shebang faz o bash falhar com
+# `bad interpreter: /usr/bin/env bash^M` — erro que não diz o que realmente aconteceu e que
+# aparece só na hora de instalar, não na hora de clonar.
+#
+# Sem estas regras, a política de fim de linha fica valendo o que a configuração de git de cada
+# máquina disser (`core.autocrlf`, `core.eol`), e não o que o repositório precisa. Aqui ela
+# passa a ser propriedade do repositório: igual para todo mundo que clonar, em qualquer sistema.
+
+* text=auto eol=lf
+
+*.sh  text eol=lf
+*.py  text eol=lf
+*.md  text eol=lf
+
+VERSION text eol=lf
+LICENSE text eol=lf
