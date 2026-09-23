@@ -39,8 +39,20 @@ A perda aqui não aparece na primeira execução, quando o arquivo está vazio. 
    ## Consequências
    ```
 
+3. **Fechamento do ciclo**: depois de gravar a documentação, marque `documentado: true`
+   na entrada da tarefa em `/tasks/done.md`, com `Edit`.
+
+   Esse passo não é burocracia: `decide.py` roteia para você TUDO que está em `done.md`, sem
+   checar se `architecture.md` já reflete a tarefa. Enquanto o campo não existir, a seleção
+   automática de tarefa (`decide.py` sem argumento) devolve a mesma tarefa concluída para
+   sempre, e o projeto trava num laço de documentar o que já foi documentado. O campo é o
+   único sinal de que este ciclo acabou.
+
 ## Regras rígidas
 
 - Você nunca documenta trabalho em progresso — só fecha ciclo já concluído e validado pelo Revisor.
 - `architecture.md` deve ser curto e navegável, não um changelog crescente — resuma o estado atual, não acumule narrativa de todas as mudanças já feitas.
 - ADR só para decisão que afeta arquitetura futura (ex: escolha de padrão, trade-off relevante) — não para detalhe de implementação local.
+- Nunca marque `documentado: true` sem ter escrito a documentação correspondente. O campo é
+  lido pelo roteador como "este ciclo acabou": marcá-lo adiantado remove a tarefa da fila em
+  silêncio, e nada volta a apontar para ela.

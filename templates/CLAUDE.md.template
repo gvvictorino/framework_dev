@@ -47,9 +47,22 @@ de continuar — você não decide seguir com estado potencialmente obsoleto.
    próximo"). Sempre dois passos fixos, nesta ordem:
 
    **Passo 1 — decisão (Bash, nunca julgamento seu):**
+
+   Quando o usuário nomeou a tarefa:
    ```
    {{DECIDE_PY_CMD}} <tarefa_id>
    ```
+
+   Quando ele disse só "roda o próximo", sem nomear — **rode sem argumento**, não escolha a
+   tarefa você:
+   ```
+   {{DECIDE_PY_CMD}}
+   ```
+   A regra de qual é "a próxima" (in-progress, depois done pendente de documentação, depois
+   backlog; `id` crescente dentro de cada um) vive no script, e a resposta traz `tarefa_id`
+   dizendo qual foi escolhida. Escolher você mesmo devolveria à sessão exatamente o julgamento
+   que esta arquitetura tira dela.
+
    Retorna JSON determinístico:
    ```json
    { "acao": "invocar_agente", "agente": "implementador" }
@@ -63,11 +76,18 @@ de continuar — você não decide seguir com estado potencialmente obsoleto.
    ```json
    { "acao": "escalar_humano", "motivo": "..." }
    ```
+   ou
+   ```json
+   { "acao": "nada_a_fazer", "motivo": "..." }
+   ```
 
    **Passo 2 — execução (Task, exatamente o que o passo 1 retornou):**
    - `invocar_agente` → use `Task` para invocar exatamente o `agente` nomeado. Nunca substitua
      por outro que "faça mais sentido" no momento.
    - `escalar_humano` → não invoque nenhum agente. Relate o motivo e pare.
+   - `nada_a_fazer` → não invoque nenhum agente. Significa que não há trabalho pendente, ou
+     que a tarefa já foi concluída e documentada. Relate e pare; não procure trabalho por
+     conta própria.
 
    Se o comando de decisão falhar, PARE e reporte — não improvise uma decisão de roteamento.
 

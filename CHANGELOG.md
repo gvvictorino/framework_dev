@@ -11,6 +11,114 @@ mudança manual), quem aplica é responsável por: incrementar `VERSION` e acres
 aqui, no mesmo commit. Sem isso, `atualizar.sh` não tem o que reportar ao rodar em outra
 máquina.
 
+## [1.1.0] — 2026-09-23
+
+Fecha as sete propostas restantes da auditoria de 2026-09-19: P2 (resto), P3, P4, P5, P7, P8 e
+P9. MINOR, e não PATCH, porque a P5 acrescenta um modo de invocação e um quarto formato de
+saída a `decide.py` — capacidade nova, sem quebrar nada existente. Suíte: 19 → 27 casos.
+
+### P5 — seleção de tarefa deixa de ser julgamento da sessão
+
+`templates/CLAUDE.md.template` disparava o ciclo com "roda o próximo", mas `decide.py` exigia
+um `<tarefa_id>` e não tinha modo "qual tarefa agora". Nada definia qual era a próxima: a
+escolha caía na sessão principal, num sistema cujo princípio declarado é que decisão de
+roteamento não é julgamento de LLM. Não aparecia com backlog de uma tarefa.
+
+- `decide.py` sem argumento aplica `proxima_tarefa()` e acrescenta `tarefa_id` à resposta. A
+  ordem é `in-progress.md` → `done.md` pendente de documentação → `backlog.md`, e dentro de
+  cada arquivo o `id` crescente, com os dígitos comparados como número (senão T-10 viria antes
+  de T-2). O princípio da ordem: terminar o que já começou antes de começar coisa nova, e
+  documentar é fechamento de trabalho feito, não trabalho novo.
+- Com `<tarefa_id>` explícito a saída continua byte a byte igual à da v1.0.7 — `tarefa_id` só
+  aparece no modo sem argumento, onde quem chamou não sabe qual tarefa foi escolhida.
+- Quarto formato de saída: `{"acao": "nada_a_fazer", "motivo": "..."}`. O template ganhou a
+  instrução de tratá-lo como ponto de parada, sem procurar trabalho por conta própria.
+
+**Campo novo `documentado`, que a auditoria não previu.** Percorrendo a seleção apareceu um
+laço: `decide.py` roteia para o Documentador TUDO que está em `done.md`, sem checar se
+`architecture.md` já reflete a tarefa — comportamento deliberado, porque o Documentador é
+idempotente. Mas com seleção automática isso significa que a primeira tarefa concluída do
+projeto seria escolhida como "a próxima" para sempre. É a mesma classe da P1: um estado que
+nada consegue consumir. O Documentador passa a marcar `documentado: true` ao fechar, e o
+roteador trata tarefa documentada como ciclo encerrado. Campo ausente conta como `false`,
+então projeto anterior a esta versão se comporta exatamente como antes.
+
+Deixar o Documentador fora da seleção automática era a alternativa — e estava errada: a
+documentação ficaria acessível só por chamada explícita por id, exatamente o tipo de passo que
+some do fluxo por ninguém lembrar dele.
+
+### P9 — separador de caminho não depende mais do sistema operacional
+
+Dois gatilhos montavam `arquivos_envolvidos` com `str(...relative_to(ROOT))`, que usa o
+separador do SO, enquanto o circuit breaker compara essas listas por igualdade literal de
+string. Decisão gravada no Linux nunca casava com a mesma divergência avaliada no Windows, e o
+breaker falhava **aberto** — nunca escalava, por mais que o conflito reabrisse. A v1.0.6 tinha
+removido o gatilho prático padronizando a plataforma; agora a causa está corrigida.
+
+- `.as_posix()` nos dois pontos de saída, com o porquê no comentário para ninguém "simplificar"
+  de volta para `str()`.
+- Normalização também na **leitura** do índice: entrada já gravada com barra invertida continua
+  casando, em vez de reiniciar toda cadeia de `supersedes` gravada no Windows.
+- Dois casos novos na suíte: um trava o formato de saída, outro prova que o histórico antigo
+  ainda casa.
+
+### P3 e P4 — `setup-machine.sh`
+
+- **P3**: o laço copiava exatamente um arquivo por skill (`SKILL.md`). Funcionava porque as
+  duas skills são de arquivo único; no dia em que uma ganhasse `references/`, `scripts/` ou
+  `assets/`, o arquivo de apoio não seria instalado e a skill quebraria em todas as máquinas,
+  sem erro nenhum no setup. Agora copia a árvore inteira, mantendo a confirmação por arquivo.
+- **P4**: nada removia agente excluído do framework — ele continuava vivo e invocável em toda
+  máquina já instalada, e `atualizar.sh --force` propagava adição mas nunca remoção. Agora o
+  script mantém um manifesto (`~/.claude/.agent-framework-manifest`) do que **ele** instalou.
+
+  O manifesto não é detalhe de implementação: sem ele, "está no destino e não na origem"
+  incluiria qualquer agente ou skill que você tenha instalado por outra via, e o script passaria
+  a sugerir apagar coisa que nunca foi dele. Nesta máquina isso já aconteceria — existe uma
+  skill `synced` em `~/.claude/skills/` que não vem daqui. Verificado em `HOME` descartável:
+  ela não é apontada como órfã.
+
+  Em `--force` o script **reporta e não remove**. Esse modo existe para rodar sem interação
+  (`atualizar.sh` depende disso), e apagar ali seria a única operação destrutiva do script
+  acontecendo sem ninguém ver. Órfão que você decide manter continua no manifesto, senão o
+  script esqueceria a origem dele e nunca mais ofereceria remover.
+
+### P8 — cópia `--local` do roteador avisa quando fica para trás
+
+Em `--local`, `decide.py` é copiado para dentro do projeto e `atualizar.sh` nunca alcança essa
+cópia: ele atualiza os agentes da máquina inteira, não o roteador do projeto. Como agentes e
+roteador são acoplados (a v1.0.1 mudou `decide.py` **e** `orquestrador-llm.md` na mesma
+correção), o projeto passa a rodar agentes novos contra roteamento antigo, sem sinal.
+
+- `bootstrap-project.sh --local` grava `orchestrator/VERSION` junto da cópia.
+- `decide.py` compara a própria `VERSION` com a do framework canônico e avisa quando divergem.
+  O aviso sai em **stderr**: stdout é contrato, e quem consome o JSON não pode receber texto
+  solto no meio. Em modo `--shared` os dois caminhos resolvem para o mesmo arquivo, então não
+  há aviso — verificado.
+
+### P2 (resto) e P7
+
+- **P2**: `design` e `data-pipeline` ganharam `Edit` e a regra explícita de atualizar em vez de
+  recriar. Ambos já instruíam "para atualizar, não recriar", que é precisamente o que `Write`
+  não faz — e o campo `versao` regredia em silêncio se o agente reescrevesse sem reler.
+- **P7**: o checklist da skill de auditoria pulava do item 9 para o 11. Renumerado, com uma nota
+  de compatibilidade: relatórios anteriores citam os números antigos, e não devem ser
+  reescritos para casar com a numeração nova — são registro do que foi auditado na época.
+
+### Migração
+
+Nenhuma obrigatória. Projeto em andamento continua funcionando sem tocar em nada: `documentado`
+ausente vale `false`, o formato de saída com id explícito não mudou, e entradas de índice já
+gravadas continuam casando.
+
+Duas coisas que valem fazer, quando for conveniente:
+
+1. Rodar `setup-machine.sh` para propagar os agentes (é o que leva `documentado` ao Documentador
+   e `Edit` ao `design`/`data-pipeline`). Na primeira execução ele só registra o manifesto; a
+   detecção de deriva passa a valer da segunda em diante.
+2. Em projeto `--local`, gravar `orchestrator/VERSION` para habilitar o aviso de divergência —
+   o próprio bootstrap diz o comando quando encontra a cópia sem esse arquivo.
+
 ## [1.0.7] — 2026-09-19
 
 Aplicação da **P6** e da parte de alto risco da **P2** da auditoria de 2026-09-19. As duas são

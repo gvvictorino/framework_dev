@@ -93,8 +93,20 @@ if [[ "$MODO" == "--local" ]]; then
   if [[ ! -f "orchestrator/decide.py" ]]; then
     cp "$FRAMEWORK_DECIDE" orchestrator/decide.py
     echo "  + orchestrator/decide.py copiado (modo local)"
+    # A VERSION viaja junto com a cópia. É o que permite a decide.py perceber, e avisar em
+    # stderr, que este projeto ficou para trás: atualizar.sh atualiza os agentes de toda a
+    # máquina, mas nunca esta cópia do roteador — e agentes e roteador são acoplados (a
+    # v1.0.1 mudou decide.py E orquestrador-llm.md na mesma correção). Sem a VERSION aqui,
+    # o projeto roda agentes novos contra roteamento antigo sem nenhum sinal.
+    cp "$SCRIPT_DIR/VERSION" orchestrator/VERSION
+    echo "  + orchestrator/VERSION copiado (marca a versão desta cópia)"
   else
     echo "  = orchestrator/decide.py (já existe, mantido)"
+    if [[ ! -f "orchestrator/VERSION" ]]; then
+      echo "    nota: sem orchestrator/VERSION, esta cópia não consegue avisar quando ficar"
+      echo "    desatualizada. Se ela veio do framework, registre a versão dela com:"
+      echo "        cp $SCRIPT_DIR/VERSION orchestrator/VERSION"
+    fi
   fi
 else
   # O caminho é deliberadamente fixo: a arquitetura depende de uma cópia única do

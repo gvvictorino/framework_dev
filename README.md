@@ -17,7 +17,8 @@ lendo o repositório — nunca o histórico de chat.
 - **`decide.py`** — camada de roteamento determinística. Decide qual agente roda a seguir por
   regras verificáveis (existência de spec, versão, profundidade de reabertura de conflito), não
   por julgamento de LLM a cada passo. Só escala para julgamento de LLM em casos fechados e
-  específicos.
+  específicos. Também escolhe **qual** é a próxima tarefa, quando chamado sem argumento — a
+  regra de ordenação é dele, não da sessão.
 - **2 skills** (`skills/`) — auditoria da própria arquitetura (`/auditoria-arquitetura`) e
   espelho opcional do backlog no Notion, via de mão única (`/sincronizar-notion`).
 - **Scripts de instalação e atualização** — `setup-machine.sh` (instala numa máquina),

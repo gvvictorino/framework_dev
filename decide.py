@@ -8,17 +8,23 @@ qual é a próxima ação correta. Quem executa a ação (via Task, no Claude
 Code) é a sessão principal (seguindo CLAUDE.md) ou o agente orquestrador-llm.
 
 Uso:
-    python3 <caminho-do-framework>/decide.py <tarefa_id>
+    python3 <caminho-do-framework>/decide.py <tarefa_id>   # decide sobre uma tarefa
+    python3 <caminho-do-framework>/decide.py               # escolhe a próxima e decide
+
+Sem argumento, o script aplica a regra de seleção de `proxima_tarefa()` e acrescenta
+`tarefa_id` ao JSON, para que quem chamou saiba sobre qual tarefa ele decidiu. Com id
+explícito a saída é a mesma de sempre, sem campo novo.
 
 O caminho concreto é fixado pelo bootstrap no CLAUDE.md de cada projeto; na
 instalação padrão é $HOME/.claude-agent-framework/decide.py. O script opera
 sempre sobre o diretório de onde foi chamado, não sobre onde ele mesmo está.
 
-Saída (stdout, JSON), sempre um destes três formatos:
+Saída (stdout, JSON), sempre um destes quatro formatos:
     {"acao": "invocar_agente", "agente": "<nome>"}
     {"acao": "invocar_agente", "agente": "orquestrador-llm", "gatilho": "<nome>",
      "arquivos_envolvidos": [...]}
     {"acao": "escalar_humano", "motivo": "<texto>"}
+    {"acao": "nada_a_fazer", "motivo": "<texto>"}
 
 O contrato vale também no erro: arquivo de estado com YAML inválido ou forma
 inesperada vira `escalar_humano` com o arquivo e o detalhe no motivo, nunca
@@ -40,6 +46,12 @@ gerar tarefas nesse formato, o script funciona sem alteração:
                                         # a devolveu ao Implementador por causa
                                         # dele. É o que marca o gap como já
                                         # reivindicado para gatilho_gap_sem_tarefa
+    documentado: bool                  # o Documentador marca true depois de refletir
+                                        # a tarefa em architecture.md. É o que encerra
+                                        # o ciclo: sem ele, a seleção automática de
+                                        # tarefa escolheria para sempre a primeira
+                                        # entrada de done.md, que sempre roteia para
+                                        # o Documentador. Ausente conta como false
     implementado: bool                 # o Implementador marca true e PARA; a
                                         # tarefa fica em in-progress.md como fila
                                         # de revisão. Quem move para done.md é o
@@ -311,7 +323,12 @@ def gatilho_spec_conflict(tarefa: dict):
     versao_atual = extrair_versao_spec(pipeline_spec)
 
     if versao_atual is not None and versao_referenciada != versao_atual:
-        return [str(qual_spec.relative_to(ROOT)), str(pipeline_spec.relative_to(ROOT))]
+        # .as_posix() e obrigatorio, nao cosmetico: profundidade_cadeia compara
+        # arquivos_envolvidos por igualdade literal de string. str() usa o separador
+        # do SO, entao uma decisao gravada no Linux nunca casaria com a mesma
+        # divergencia avaliada no Windows, e o circuit breaker falharia ABERTO.
+        return [qual_spec.relative_to(ROOT).as_posix(),
+                pipeline_spec.relative_to(ROOT).as_posix()]
     return None
 
 
@@ -338,7 +355,7 @@ def gatilho_gap_sem_tarefa(tarefa: dict):
         if extrair_campo_gap_report(gap_path, "status") != "divergente":
             continue
         if gap_path.name not in origens_ja_tratadas:
-            orfaos.append(str(gap_path.relative_to(ROOT)))
+            orfaos.append(gap_path.relative_to(ROOT).as_posix())  # POSIX: ver gatilho_spec_conflict
 
     return orfaos or None
 
@@ -371,6 +388,18 @@ GATILHOS = {
 # Profundidade de cadeia (supersedes) — circuit breaker antes de chamar LLM
 # ---------------------------------------------------------------------------
 
+def normalizar_caminhos(caminhos) -> set:
+    """
+    Conjunto de caminhos comparavel entre sistemas operacionais.
+
+    Entradas ja gravadas no indice antes da v1.1.0 podem ter barra invertida,
+    porque os gatilhos usavam o separador do SO. Normalizar na leitura faz o
+    historico continuar casando em vez de reiniciar toda cadeia de supersedes
+    que tenha sido gravada no Windows.
+    """
+    return {str(c).replace("\\", "/") for c in caminhos}
+
+
 def profundidade_cadeia(gatilho: str, arquivos: list) -> int:
     """
     Comprimento da MAIOR cadeia de reaberturas encadeadas via `supersedes`
@@ -399,7 +428,7 @@ def profundidade_cadeia(gatilho: str, arquivos: list) -> int:
         e.get("id"): e
         for e in entradas
         if e.get("gatilho") == gatilho
-        and set(e.get("arquivos_envolvidos", [])) == set(arquivos)
+        and normalizar_caminhos(e.get("arquivos_envolvidos", [])) == normalizar_caminhos(arquivos)
         and e.get("id") is not None
     }
     if not relacionadas:
@@ -446,9 +475,10 @@ def mapear_tarefa_para_agente(tarefa: dict, arquivo_atual: Path) -> str:
     tipo = tarefa.get("tipo")
 
     if arquivo_atual == DONE:
-        # Ciclo de implementação fechado; falta só documentar, se ainda
-        # não foi feito. decide.py não checa se architecture.md já reflete
-        # esta tarefa — isso fica a cargo do próprio Documentador, que é
+        # Ciclo de implementação fechado; falta documentar. O caso já documentado
+        # não chega aqui — `decidir` o intercepta antes, pelo campo `documentado`.
+        # decide.py continua não inspecionando o conteúdo de architecture.md: quem
+        # garante que documentar duas vezes não duplica é o próprio Documentador,
         # idempotente por design (lê o que já existe antes de escrever).
         return "documentador"
 
@@ -480,6 +510,94 @@ def mapear_tarefa_para_agente(tarefa: dict, arquivo_atual: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Seleção de tarefa — qual é "a próxima", por regra e não por julgamento
+# ---------------------------------------------------------------------------
+
+# Terminar o que já começou antes de começar coisa nova. `done.md` vem antes de
+# `backlog.md` porque documentar é fechamento de trabalho já feito, não trabalho novo.
+ORDEM_DE_SELECAO = (IN_PROGRESS, DONE, BACKLOG)
+
+
+def _chave_ordenacao(tarefa: dict):
+    """
+    Ordena por `id` comparando os dígitos como número, não como texto — sem isso
+    T-10 viria antes de T-2. Id sem dígito vai para o fim, em ordem alfabética.
+    """
+    tid = str(tarefa.get("id", ""))
+    m = re.search(r"(\d+)", tid)
+    return (0, int(m.group(1)), tid) if m else (1, 0, tid)
+
+
+def tarefa_pendente(tarefa: dict, arquivo: Path) -> bool:
+    """
+    Tarefa em `done.md` só continua pendente enquanto não tiver `documentado: true`.
+
+    Sem esse campo a seleção automática não termina: `mapear_tarefa_para_agente`
+    devolve `documentador` para tudo que está em done.md, então a primeira tarefa
+    concluída do projeto seria escolhida como "a próxima" para sempre. A ausência
+    do campo conta como não documentada, então projeto anterior à v1.1.0 continua
+    se comportando como antes.
+    """
+    if arquivo == DONE:
+        return not tarefa.get("documentado")
+    return True
+
+
+def proxima_tarefa() -> str | None:
+    """
+    Qual tarefa processar quando o usuário diz só "roda o próximo", sem nomear id.
+
+    A regra é explícita e mora aqui, não no julgamento da sessão principal. Antes
+    da v1.1.0 não existia regra nenhuma: o template mandava rodar "o próximo" e o
+    script exigia um `<tarefa_id>`, então a escolha caía na sessão — num sistema
+    cujo princípio declarado é que decisão de roteamento não é julgamento de LLM.
+    A lacuna não aparecia com backlog de uma tarefa só.
+    """
+    for arquivo in ORDEM_DE_SELECAO:
+        candidatas = [
+            t for t in carregar_lista_yaml(arquivo) if tarefa_pendente(t, arquivo)
+        ]
+        if candidatas:
+            return min(candidatas, key=_chave_ordenacao).get("id")
+    return None
+
+
+def avisar_se_copia_local_desatualizada() -> None:
+    """
+    No modo --local do bootstrap, decide.py é copiado para dentro do projeto e
+    `atualizar.sh` nunca alcança essa cópia: ele atualiza os agentes em
+    ~/.claude/agents para a máquina inteira, mas não o roteador do projeto. Como
+    agentes e roteador são acoplados (a v1.0.1 mudou `decide.py` E
+    `orquestrador-llm.md` na mesma correção), o projeto passa a rodar agentes
+    novos contra roteamento antigo, sem nenhum sinal.
+
+    O aviso sai em STDERR de propósito: stdout é contrato, e quem consome o JSON
+    não pode receber texto solto no meio dele.
+    """
+    propria = Path(__file__).resolve().parent / "VERSION"
+    canonica = (Path.home() / ".claude-agent-framework" / "VERSION").resolve()
+    if not propria.exists() or not canonica.exists():
+        return
+    if propria == canonica:
+        return  # instalação compartilhada: é literalmente o mesmo arquivo
+    try:
+        v_propria = propria.read_text(encoding="utf-8").strip()
+        v_canonica = canonica.read_text(encoding="utf-8").strip()
+    except OSError:
+        return
+    if v_propria != v_canonica:
+        print(
+            f"AVISO: esta cópia local de decide.py é da versão {v_propria}, e o "
+            f"framework instalado na máquina está na {v_canonica}. Agentes e roteador "
+            f"são acoplados — rodar agentes novos contra roteamento antigo produz "
+            f"decisão errada sem erro visível. Para sincronizar:\n"
+            f"  cp $HOME/.claude-agent-framework/decide.py orchestrator/decide.py\n"
+            f"  cp $HOME/.claude-agent-framework/VERSION  orchestrator/VERSION",
+            file=sys.stderr,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Ponto de entrada
 # ---------------------------------------------------------------------------
 
@@ -490,6 +608,16 @@ def decidir(tarefa_id: str) -> dict:
             "acao": "escalar_humano",
             "motivo": f"Tarefa '{tarefa_id}' não encontrada em backlog, "
                       f"in-progress ou done.",
+        }
+
+    if arquivo_atual == DONE and tarefa.get("documentado"):
+        # Checado antes dos gatilhos: tarefa documentada está encerrada, e avaliar
+        # divergência em cima dela reabriria trabalho fechado. Gap real no mesmo
+        # componente continua sendo pego por qualquer tarefa viva dele.
+        return {
+            "acao": "nada_a_fazer",
+            "motivo": f"Tarefa '{tarefa_id}' já está em done.md e documentada — "
+                      f"ciclo encerrado, nada a fazer.",
         }
 
     for nome_gatilho, funcao in GATILHOS.items():
@@ -535,15 +663,32 @@ def decidir(tarefa_id: str) -> dict:
 
 
 def main():
-    if len(sys.argv) != 2:
+    if len(sys.argv) > 2:
         print(json.dumps({
             "acao": "escalar_humano",
-            "motivo": "Uso incorreto: o script de decisão espera exatamente um argumento, o <tarefa_id>.",
-        }))
+            "motivo": "Uso incorreto: o script de decisão espera no máximo um argumento, "
+                      "o <tarefa_id>. Sem argumento, ele escolhe a próxima tarefa sozinho.",
+        }, ensure_ascii=False))
         sys.exit(1)
 
+    avisar_se_copia_local_desatualizada()
+
     try:
-        resultado = decidir(sys.argv[1])
+        if len(sys.argv) == 1:
+            tarefa_id = proxima_tarefa()
+            if tarefa_id is None:
+                print(json.dumps({
+                    "acao": "nada_a_fazer",
+                    "motivo": "Nenhuma tarefa pendente em in-progress.md, done.md ou backlog.md.",
+                }, ensure_ascii=False))
+                return
+            resultado = decidir(tarefa_id)
+            # `tarefa_id` só aparece neste modo: quem chamou não sabe qual tarefa foi
+            # escolhida. Na chamada com id explícito a saída fica byte a byte igual à
+            # de antes da v1.1.0, para não quebrar nada que já leia esse JSON.
+            resultado["tarefa_id"] = tarefa_id
+        else:
+            resultado = decidir(sys.argv[1])
     except EstadoMalformado as e:
         # Mesmo tratamento dado à ausência de pyyaml: JSON válido no stdout e
         # exit 1. A sessão principal precisa de um motivo reportável, não de um

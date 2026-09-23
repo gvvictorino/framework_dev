@@ -95,7 +95,7 @@ não aplicável (projeto muito novo para o mecanismo ter sido exercitado).
   correção anterior é o tipo de erro que só aparece em busca textual, nunca em leitura isolada
   de um arquivo por vez.
 
-### 11. Agentes com `Write` mas sem `Edit`, escrevendo em arquivo compartilhado ou acumulativo
+### 10. Agentes com `Write` mas sem `Edit`, escrevendo em arquivo compartilhado ou acumulativo
 - Para cada agente com `tools:` incluindo `Write`, confirme se algum arquivo que ele escreve é
   compartilhado entre execuções (backlog.md, prompt-tests.md, index.md, architecture.md) ou se
   é sempre um arquivo novo e isolado por execução (gap-report por id de tarefa, por exemplo).
@@ -105,26 +105,34 @@ não aplicável (projeto muito novo para o mecanismo ter sido exercitado).
   roda o agente pela segunda vez com conteúdo já existente no arquivo, o que pode não acontecer
   nos primeiros testes.
 
-### 12. `decide.py` é realmente livre de efeito colateral?
+### 11. `decide.py` é realmente livre de efeito colateral?
 - A docstring do módulo afirma que `decide.py` só lê e nunca grava. Confirme isso na prática:
   grep por `write_text`, `safe_dump` ou qualquer chamada de escrita dentro do arquivo. Se
   existir alguma, o contrato declarado está sendo violado — rodar o script para diagnóstico
   (como esta própria auditoria faz) estaria alterando o estado que deveria só observar.
 
-### 13. Sincronização com Notion (se configurada)
+### 12. Sincronização com Notion (se configurada)
 - Se `docs/notion-database-id.md` existir, confirme que nenhum agente ou skill lê o Notion para
   decidir estado — grep por chamadas de leitura ao Notion fora do skill `sincronizar-notion`, e
   mesmo dentro dele, confirme que é só para localizar a página a atualizar, nunca para inferir
   status. Notion virar fonte de verdade por acidente é exatamente o tipo de drift que este
   checklist existe para pegar — a via tem que continuar sendo só arquivo → Notion.
 
-### 14. Disciplina de versionamento
+### 13. Disciplina de versionamento
 - Toda vez que esta auditoria (ou qualquer mudança manual) alterar `agents/*.md`, `skills/`,
   `decide.py`, `setup-machine.sh`, `bootstrap-project.sh` ou `templates/`, confirme que
   `VERSION` foi incrementado e `CHANGELOG.md` ganhou uma entrada correspondente, no mesmo
   commit. Sem isso, `atualizar.sh` continua funcionando (git não depende de VERSION para
   detectar mudança), mas o relatório de changelog que ele mostra ao usuário fica vazio ou
   desatualizado — a atualização acontece, só que silenciosa sobre o que mudou.
+
+### Nota sobre a numeração
+
+Até a v1.0.7 este checklist pulava do item 9 para o 11 — não havia item 10. A numeração foi
+fechada na v1.1.0, então **relatórios de auditoria datados de antes disso citam os números
+antigos**: o que eles chamam de item 11 (`Write` sem `Edit`) é o item 10 aqui, e assim por
+diante até o 14, que virou 13. Não reescreva relatório antigo para casar com esta numeração —
+eles são registro do que foi auditado na época.
 
 ## Saída da auditoria
 

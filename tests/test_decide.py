@@ -18,11 +18,17 @@ falhas = []
 
 total = 0
 
-def rodar(nome, arquivos, tarefa_id, esperado, motivo_contem=None):
+def rodar(nome, arquivos, tarefa_id, esperado, motivo_contem=None, campos=None):
     """
+    `tarefa_id=None` roda decide.py SEM argumento, exercitando a selecao
+    automatica de tarefa (v1.1.0).
+
     `motivo_contem`: trecho que o campo `motivo` precisa conter. Existe para os
     casos de estado malformado, onde acertar a acao nao basta — o valor do
     tratamento esta em o motivo dizer QUAL arquivo esta torto.
+
+    `campos`: dict de campo -> valor exato exigido no JSON de saida. Usado para
+    travar o formato de arquivos_envolvidos e o tarefa_id escolhido.
     """
     global total
     total += 1
@@ -32,8 +38,8 @@ def rodar(nome, arquivos, tarefa_id, esperado, motivo_contem=None):
             alvo = raiz / rel
             alvo.parent.mkdir(parents=True, exist_ok=True)
             alvo.write_text(textwrap.dedent(conteudo), encoding="utf-8")
-        out = subprocess.run([sys.executable, DECIDE, tarefa_id],
-                             cwd=raiz, capture_output=True, text=True)
+        cmd = [sys.executable, DECIDE] + ([] if tarefa_id is None else [tarefa_id])
+        out = subprocess.run(cmd, cwd=raiz, capture_output=True, text=True)
         # json.loads falha alto de proposito: stdout vazio e a regressao que os
         # casos 17-19 travam, e ela nao deve passar por "esperado != obtido".
         got = json.loads(out.stdout)
@@ -43,6 +49,12 @@ def rodar(nome, arquivos, tarefa_id, esperado, motivo_contem=None):
         ok = motivo_contem in got.get("motivo", "")
         if not ok:
             real = f"{real} (motivo sem {motivo_contem!r})"
+    if ok and campos:
+        for campo, valor in campos.items():
+            if got.get(campo) != valor:
+                ok = False
+                real = f"{real} ({campo}={got.get(campo)!r}, esperado {valor!r})"
+                break
     marca = "ok  " if ok else "FALHA"
     if not ok:
         falhas.append((nome, esperado, real, got))
@@ -304,6 +316,139 @@ rodar("indice de decisoes torto", {
       status: resolved
     """,
 }, "T-002", "escalar_humano", motivo_contem="index.md")
+
+# ---------------------------------------------------------------------------
+# 20-25. Selecao automatica de tarefa (P5, v1.1.0). Antes nao havia regra: o
+# template mandava rodar "o proximo" e o script exigia um id, entao a escolha
+# caia no julgamento da sessao — o oposto do principio do framework.
+# ---------------------------------------------------------------------------
+
+DUAS_FILAS = {
+    "tasks/in-progress.md": """\
+    - id: T-007
+      componente: checkout
+      tipo: ui
+      specs_referenciadas: []
+      status: doing
+    """,
+    "tasks/backlog.md": """\
+    - id: T-002
+      componente: checkout
+      tipo: ui
+      specs_referenciadas: []
+      status: pending
+    """,
+}
+
+# 20. in-progress vem antes de backlog, mesmo com id maior: terminar antes de comecar
+rodar("sem argumento: in-progress antes de backlog", DUAS_FILAS,
+      None, "implementador", campos={"tarefa_id": "T-007"})
+
+# 21. ordenacao natural por id: T-2 antes de T-10 (ordem textual daria o contrario)
+rodar("sem argumento: id ordenado como numero", {
+    "tasks/backlog.md": """\
+    - id: T-10
+      componente: checkout
+      tipo: ui
+      specs_referenciadas: []
+      status: pending
+    - id: T-2
+      componente: checkout
+      tipo: ui
+      specs_referenciadas: []
+      status: pending
+    """,
+}, None, "planner", campos={"tarefa_id": "T-2"})
+
+# 22. done sem documentar vem antes do backlog: fechar ciclo antes de abrir trabalho novo
+rodar("sem argumento: done pendente antes de backlog", {
+    "tasks/done.md": """\
+    - id: T-050
+      componente: checkout
+      tipo: ui
+      specs_referenciadas: []
+      status: done
+    """,
+    "tasks/backlog.md": """\
+    - id: T-001
+      componente: checkout
+      tipo: ui
+      specs_referenciadas: []
+      status: pending
+    """,
+}, None, "documentador", campos={"tarefa_id": "T-050"})
+
+# 23. done JA documentado sai da fila — sem isso a selecao devolveria a mesma
+# tarefa concluida para sempre, porque done.md sempre roteia para o documentador
+rodar("sem argumento: done documentado sai da fila", {
+    "tasks/done.md": """\
+    - id: T-050
+      componente: checkout
+      tipo: ui
+      specs_referenciadas: []
+      status: done
+      documentado: true
+    """,
+}, None, "nada_a_fazer")
+
+# 24. o mesmo pela chamada explicita por id
+rodar("id explicito: done documentado", {
+    "tasks/done.md": """\
+    - id: T-050
+      componente: checkout
+      tipo: ui
+      specs_referenciadas: []
+      status: done
+      documentado: true
+    """,
+}, "T-050", "nada_a_fazer")
+
+# 25. projeto sem nada pendente
+rodar("sem argumento: nada pendente", {"tasks/backlog.md": "[]\n"},
+      None, "nada_a_fazer")
+
+# ---------------------------------------------------------------------------
+# 26-27. Separador de caminho (P9). O circuit breaker compara
+# arquivos_envolvidos por igualdade literal de string: separador dependente do
+# SO fazia decisao gravada no Linux nunca casar com a mesma divergencia
+# avaliada no Windows, e o breaker falhava ABERTO — nunca escalava.
+# ---------------------------------------------------------------------------
+
+# 26. o formato de saida e POSIX, travado
+rodar("gap orfao devolve caminho POSIX", {
+    "tasks/backlog.md": """\
+    - id: T-001
+      componente: checkout
+      tipo: ui
+      specs_referenciadas: []
+      status: pending
+    """,
+    "docs/specs/functional/checkout.md": FUNC,
+    "docs/decisions/gap-reports/T-999.md": "componente: checkout\nstatus: divergente\n",
+}, "T-001", "orquestrador-llm",
+   campos={"arquivos_envolvidos": ["docs/decisions/gap-reports/T-999.md"]})
+
+# 27. entrada antiga gravada com barra invertida ainda casa na leitura, senao
+# toda cadeia de supersedes gravada no Windows reiniciaria do zero
+rodar("indice com barra invertida ainda casa", {
+    "tasks/backlog.md": ORFA,
+    "docs/decisions/orchestrator/index.md": """\
+    - id: 1
+      gatilho: spec_ausente
+      arquivos_envolvidos: ['docs\\specs\\legado\\checkout.md']
+      status: resolved
+    - id: 2
+      gatilho: spec_ausente
+      arquivos_envolvidos: ['docs\\specs\\legado\\checkout.md']
+      status: resolved
+      supersedes: 1
+    - id: 3
+      gatilho: spec_ausente
+      arquivos_envolvidos: ['docs\\specs\\legado\\checkout.md']
+      status: resolved
+      supersedes: 2
+    """,
+}, "T-002", "escalar_humano")
 
 print()
 print(f"{total - len(falhas)}/{total} passaram")
