@@ -105,6 +105,15 @@ correção), o projeto passa a rodar agentes novos contra roteamento antigo, sem
   de compatibilidade: relatórios anteriores citam os números antigos, e não devem ser
   reescritos para casar com a numeração nova — são registro do que foi auditado na época.
 
+### Checklist da auditoria ganhou os dois itens que a própria auditoria inventou
+
+O relatório de 2026-09-19 avaliou dois mecanismos que não existiam no checklist da skill, e os
+numerou como 15 e 16 por conta própria: robustez do contrato de saída e seleção de tarefa. Os
+dois viraram comportamento garantido (v1.0.7 e esta versão), e sem entrar no checklist
+permanente nenhuma auditoria futura voltaria a verificá-los — o gap seria reintroduzível sem
+que nada acusasse. Entraram como itens 14 e 15, cada um com o critério de verificação que a
+correção tornou possível, inclusive o de que a fila de seleção precisa **terminar**.
+
 ### Migração
 
 Nenhuma obrigatória. Projeto em andamento continua funcionando sem tocar em nada: `documentado`

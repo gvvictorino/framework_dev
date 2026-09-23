@@ -126,6 +126,26 @@ não aplicável (projeto muito novo para o mecanismo ter sido exercitado).
   detectar mudança), mas o relatório de changelog que ele mostra ao usuário fica vazio ou
   desatualizado — a atualização acontece, só que silenciosa sobre o que mudou.
 
+### 14. Robustez do contrato de saída de `decide.py`
+- A docstring do módulo promete que o stdout é **sempre** um dos formatos JSON declarados.
+  Confirme que isso vale também no erro: monte um projeto descartável com `backlog.md`,
+  `in-progress.md` ou o índice de decisões malformado (YAML inválido, lista de itens que não
+  são mapeamentos, `arquivos_envolvidos` que não é lista) e rode o script. Traceback com stdout
+  vazio é violação de contrato: a sessão principal segue o template, "para e reporta", e fica
+  sem motivo utilizável. Quem escreve esses arquivos são agentes de LLM, então malformação é
+  cenário de operação normal, não corrupção exótica. Confirme também que entrada torta no
+  índice **escala** em vez de ser ignorada — ignorar faz o circuit breaker falhar ABERTO, que é
+  o modo de falha que ele existe para evitar.
+
+### 15. Seleção de tarefa é determinística
+- O template dispara o ciclo com "roda o próximo". Confirme que existe regra explícita de qual
+  é a próxima e que ela mora em `decide.py`, não no julgamento da sessão — rode o script sem
+  argumento num projeto com tarefas em mais de um arquivo de estado e verifique a ordem contra
+  `proxima_tarefa()`. Confirme também que a seleção **termina**: toda tarefa escolhida precisa
+  ter um estado que a tire da fila depois de processada (`implementado`, `documentado`). Fila
+  que devolve para sempre a mesma tarefa é a mesma classe de bug do agente inalcançável, só que
+  na direção oposta. A lacuna não aparece com backlog de uma tarefa.
+
 ### Nota sobre a numeração
 
 Até a v1.0.7 este checklist pulava do item 9 para o 11 — não havia item 10. A numeração foi
