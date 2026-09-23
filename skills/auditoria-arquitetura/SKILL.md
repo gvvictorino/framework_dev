@@ -17,12 +17,14 @@ arquitetura de agentes deveria funcionar, e o roteiro que você segue quando é 
 - **Sessão principal** age como orquestrador conversacional, seguindo `CLAUDE.md` do projeto.
 - **O script de decisão (`decide.py`)** é a única fonte de decisão de roteamento — determinístico, sem
   julgamento de LLM, exceto para os 4 gatilhos fechados que escalam para `orquestrador-llm`.
+  Chamado sem argumento, também decide QUAL é a próxima tarefa, por regra própria.
 - **4 gatilhos**: `spec_ausente`, `spec_conflict`, `gap_sem_tarefa`, `tarefa_travada_N_ciclos`.
 - **Circuit breaker**: profundidade de cadeia de reaberturas (`supersedes`) ≥ 3 força
   `escalated_human`, sem depender de julgamento.
 - **Campos de estado obrigatórios**: `origem_gap` (tarefa ↔ gap-report), `implementado`
-  (marca fim da implementação para o Revisor assumir), `requer_qualificacao`, `versao` (em
-  toda spec), `schema_referencia` (qualification → data-pipeline).
+  (marca fim da implementação para o Revisor assumir), `documentado` (marca fim do ciclo, para
+  a tarefa sair da fila de seleção), `requer_qualificacao`, `versao` (em toda spec),
+  `schema_referencia` (qualification → data-pipeline).
 
 - **Skill `sincronizar-notion`** (opcional): espelha o backlog no Notion, via de mão única
   (arquivo → Notion). Nunca é fonte de decisão para `decide.py` nem para nenhum agente.
@@ -183,7 +185,7 @@ o tipo de risco que esta arquitetura foi desenhada para evitar em todo o resto d
 auditoria não é uma exceção a essa regra, é a peça que mais precisa dela.
 
 Se o usuário pedir explicitamente para você aplicar uma ou mais propostas: edite dentro do
-repositório do framework (`~/.claude-agent-framework/`, se for um clone git — ver item 14),
+repositório do framework (`~/.claude-agent-framework/`, se for um clone git — ver item 13),
 incremente `VERSION` e acrescente a entrada em `CHANGELOG.md` no mesmo pedido, e informe que o
 usuário ainda precisa rodar `git add`, `git commit` e, se quiser propagar para outras máquinas,
 `git push` — você não tem acesso a essas ações fora do sistema de arquivos.

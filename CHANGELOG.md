@@ -11,6 +11,21 @@ mudança manual), quem aplica é responsável por: incrementar `VERSION` e acres
 aqui, no mesmo commit. Sem isso, `atualizar.sh` não tem o que reportar ao rodar em outra
 máquina.
 
+## [1.1.2] — 2026-09-23
+
+Duas correções na skill `auditoria-arquitetura`, ambas de defeitos que a própria v1.1.0
+introduziu na seção de referência da skill — não no comportamento do framework.
+
+- A "Regra rígida" apontava para "item 14" querendo dizer *Disciplina de versionamento*, que a
+  renumeração da P7 moveu para o 13. Referência cruzada quebrada por uma mudança minha, que é
+  exatamente a classe de erro que o item 9 do checklist existe para pegar.
+- A "Visão geral do sistema" listava os campos de estado obrigatórios sem incluir
+  `documentado`, criado nesta mesma linhagem. Essa seção é a referência contra a qual a
+  auditoria compara o estado real: campo ausente dali é campo que nenhuma auditoria futura
+  verifica. Pela mesma razão, a descrição de `decide.py` passou a mencionar a seleção de tarefa.
+
+Sem impacto em projetos: a skill é ferramenta de auditoria, não participa do fluxo de execução.
+
 ## [1.1.1] — 2026-09-23
 
 Correção de um bug introduzido pela P3 na v1.1.0, descoberto ao rodar o script de verdade.
