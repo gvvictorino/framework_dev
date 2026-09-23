@@ -11,6 +11,30 @@ mudança manual), quem aplica é responsável por: incrementar `VERSION` e acres
 aqui, no mesmo commit. Sem isso, `atualizar.sh` não tem o que reportar ao rodar em outra
 máquina.
 
+## [1.1.1] — 2026-09-23
+
+Correção de um bug introduzido pela P3 na v1.1.0, descoberto ao rodar o script de verdade.
+
+`setup-machine.sh` abortava no meio quando alguma skill precisava de confirmação: os agentes
+eram instalados e as skills não, com exit 1 e nenhuma mensagem que explicasse por quê.
+
+O laço que percorre a árvore das skills redirecionava a stdin para a saída do `find`. O `read`
+da confirmação, dentro do laço, lia dessa stream em vez do terminal — consumia os próprios
+caminhos como se fossem a resposta do usuário, batia em EOF e o `set -e` derrubava o script. A
+lista de skills a copiar ficava pela metade, e o manifesto da P4 nem chegava a ser escrito.
+
+- O laço passa a ler a lista pelo descritor 3, deixando a stdin livre para a confirmação.
+
+Por que passou pela verificação da v1.1.0: a cópia da árvore foi testada com `--force`, que não
+pergunta nada, e o caminho interativo só foi exercitado no bloco de remoção de órfãos, que fica
+fora do laço. As duas metades funcionavam isoladas — o defeito só existia na interseção. É a
+mesma forma da P1 e da regressão que os casos 17-19 travam: o bug mora entre duas partes
+corretas, não dentro de nenhuma delas.
+
+Sem impacto em projetos: o script é de instalação. Quem rodou a v1.1.0 com `--force` não foi
+afetado; quem rodou sem `--force` ficou com os agentes atualizados e as skills antigas, e basta
+rodar de novo nesta versão.
+
 ## [1.1.0] — 2026-09-23
 
 Fecha as sete propostas restantes da auditoria de 2026-09-19: P2 (resto), P3, P4, P5, P7, P8 e

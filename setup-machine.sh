@@ -78,13 +78,16 @@ done
 # skills fossem de arquivo único — no dia em que uma ganhasse um arquivo de apoio, ele não seria
 # instalado e a skill quebraria em todas as máquinas, sem nenhum erro aqui.
 echo "Instalando skills em $SKILLS_DEST"
-while IFS= read -r -d '' origem; do
+# O laco le a lista pelo descritor 3, nao pela stdin: copiar_com_confirmacao usa `read` para
+# perguntar, e com a stdin tomada pelo find ele leria os proprios caminhos como se fossem a
+# resposta do usuario, batendo em EOF e abortando o script sob `set -e`.
+while IFS= read -r -d '' origem <&3; do
   relativo="${origem#"$SKILLS_SRC"/}"
   destino="$SKILLS_DEST/$relativo"
   mkdir -p "$(dirname "$destino")"
   copiar_com_confirmacao "$origem" "$destino" "$relativo"
   INSTALADOS+=("$destino")
-done < <(find "$SKILLS_SRC" -type f -print0 | sort -z)
+done 3< <(find "$SKILLS_SRC" -type f -print0 | sort -z)
 
 # --- Deriva: o que este script instalou um dia e o framework não tem mais ---
 #
