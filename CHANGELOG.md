@@ -11,6 +11,63 @@ mudança manual), quem aplica é responsável por: incrementar `VERSION` e acres
 aqui, no mesmo commit. Sem isso, `atualizar.sh` não tem o que reportar ao rodar em outra
 máquina.
 
+## [1.2.0] — 2026-09-24
+
+Aplica a P1 da auditoria de 2026-09-24: o bloco gerado do `CLAUDE.md` passa a ter versão, a
+divergir visivelmente e a ter caminho de atualização. MINOR porque é capacidade nova.
+
+O bloco entre `<!-- BEGIN arquitetura-agentes-ia -->` e `<!-- END -->` contém as **instruções de
+fluxo** que a sessão principal segue. `bootstrap-project.sh` detectava o marcador e preservava o
+bloco; `atualizar.sh` propaga agentes e skills e nunca olhou para projeto nenhum. Resultado: o
+bloco de um projeto ficava congelado na versão que o gerou, para sempre, em silêncio.
+
+A auditoria mediu o efeito no `analistajuridico`: bloco na v1.0.6, portanto sem o modo de
+seleção automática de tarefa entregue na v1.1.0. A sessão principal continuava escolhendo a
+tarefa por julgamento — exatamente o que aquela correção tinha removido. **A capacidade existia
+no roteador e não alcançava quem deveria usá-la.** Já tinha sido sentido antes: aquele projeto
+tem um commit chamado "sincroniza o bloco gerado do CLAUDE.md com o framework 1.0.6",
+sincronização manual, sem ferramenta e sem detecção.
+
+É a mesma classe da P8 de 19/09 (cópia `--local` do `decide.py` sem caminho de atualização), com
+duas diferenças que a tornam mais grave: atinge o modo `--shared`, que é o padrão, logo todo
+projeto; e o que fica defasado é instrução de comportamento, não um caminho de arquivo.
+
+- **Marca de versão no bloco**: o template abre com
+  `<!-- BEGIN arquitetura-agentes-ia v{{FRAMEWORK_VERSION}} ... -->`, substituído no bootstrap.
+  O prefixo do marcador não mudou, então projeto gerado por versão anterior continua sendo
+  reconhecido — é tratado como "sem marca de versão", que é justamente o caso a corrigir.
+- **Detecção em `decide.py`**: compara a marca do bloco com a `VERSION` do framework e avisa em
+  **stderr** quando divergem, com o comando para corrigir. Stdout segue contrato. É o mesmo
+  mecanismo do aviso de cópia local da v1.1.0, e a razão de estar aqui e não só no bootstrap é
+  que `decide.py` roda a cada passo do ciclo, enquanto o bootstrap roda quando alguém lembra.
+- **Atualização em `bootstrap-project.sh`**: quarto ramo que substitui o conteúdo **entre os
+  marcadores**, preservando tudo fora deles e guardando `CLAUDE.md.bak`. Num terminal, pergunta;
+  fora de um, só reporta; com `--atualizar-claude-md`, aplica sem perguntar.
+- **Parsing de argumentos**: o modo deixou de ser estritamente posicional (`${2:---shared}`), que
+  leria qualquer flag nova passada em `$2` como se fosse o modo. Agora `--shared`, `--local` e
+  `--atualizar-claude-md` são reconhecidas em qualquer ordem depois do caminho.
+
+Suíte: 27 → 30 casos, cobrindo bloco defasado, bloco sem marca e bloco em dia — este último
+trava que o aviso **não** aparece quando não deve. Aviso que aparece sempre vira ruído, para de
+ser lido, e volta a ser o mesmo silêncio que existia antes.
+
+Verificado ponta a ponta em projeto descartável, nos cinco caminhos: flag explícita, pergunta
+respondida com `s`, pergunta respondida com `n`, execução sem terminal (reporta e não altera) e
+reexecução com o bloco já em dia (não mexe). Conteúdo fora dos marcadores preservado em todos.
+
+### Migração
+
+Projeto em andamento não quebra, mas passa a **avisar em stderr a cada chamada** de `decide.py`
+até ser atualizado — que é o ponto. Para atualizar:
+
+```bash
+~/.claude-agent-framework/bootstrap-project.sh <caminho-do-projeto>
+```
+
+Revise o `CLAUDE.md.bak` depois: o bloco novo substitui o antigo inteiro, então qualquer edição
+que alguém tenha feito **dentro** dos marcadores se perde — o cabeçalho do bloco sempre avisou
+para não editar ali.
+
 ## [1.1.2] — 2026-09-23
 
 Duas correções na skill `auditoria-arquitetura`, ambas de defeitos que a própria v1.1.0

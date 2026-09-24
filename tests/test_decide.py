@@ -18,7 +18,8 @@ falhas = []
 
 total = 0
 
-def rodar(nome, arquivos, tarefa_id, esperado, motivo_contem=None, campos=None):
+def rodar(nome, arquivos, tarefa_id, esperado, motivo_contem=None, campos=None,
+          stderr_contem=None, stderr_vazio=False):
     """
     `tarefa_id=None` roda decide.py SEM argumento, exercitando a selecao
     automatica de tarefa (v1.1.0).
@@ -29,6 +30,10 @@ def rodar(nome, arquivos, tarefa_id, esperado, motivo_contem=None, campos=None):
 
     `campos`: dict de campo -> valor exato exigido no JSON de saida. Usado para
     travar o formato de arquivos_envolvidos e o tarefa_id escolhido.
+
+    `stderr_contem` / `stderr_vazio`: os avisos de defasagem saem em stderr de
+    proposito, para nao sujar o contrato do stdout. Travar os dois lados importa:
+    o aviso precisa aparecer quando deve, e o JSON precisa seguir limpo.
     """
     global total
     total += 1
@@ -40,6 +45,7 @@ def rodar(nome, arquivos, tarefa_id, esperado, motivo_contem=None, campos=None):
             alvo.write_text(textwrap.dedent(conteudo), encoding="utf-8")
         cmd = [sys.executable, DECIDE] + ([] if tarefa_id is None else [tarefa_id])
         out = subprocess.run(cmd, cwd=raiz, capture_output=True, text=True)
+        err = out.stderr
         # json.loads falha alto de proposito: stdout vazio e a regressao que os
         # casos 17-19 travam, e ela nao deve passar por "esperado != obtido".
         got = json.loads(out.stdout)
@@ -49,6 +55,12 @@ def rodar(nome, arquivos, tarefa_id, esperado, motivo_contem=None, campos=None):
         ok = motivo_contem in got.get("motivo", "")
         if not ok:
             real = f"{real} (motivo sem {motivo_contem!r})"
+    if ok and stderr_contem is not None and stderr_contem not in err:
+        ok = False
+        real = f"{real} (stderr sem {stderr_contem!r})"
+    if ok and stderr_vazio and err.strip():
+        ok = False
+        real = f"{real} (stderr deveria estar vazio: {err.strip()[:60]!r})"
     if ok and campos:
         for campo, valor in campos.items():
             if got.get(campo) != valor:
@@ -449,6 +461,37 @@ rodar("indice com barra invertida ainda casa", {
       supersedes: 2
     """,
 }, "T-002", "escalar_humano")
+
+# ---------------------------------------------------------------------------
+# 28-30. Bloco do CLAUDE.md defasado (auditoria de 2026-09-24). O bloco carrega
+# as instrucoes de fluxo que a sessao principal segue; quando fica para tras, o
+# projeto ignora capacidade que o roteador ja tem, e nada acusava.
+# ---------------------------------------------------------------------------
+
+VERSAO_ATUAL = (Path(DECIDE).parent / "VERSION").read_text(encoding="utf-8").strip()
+UMA_TAREFA = {
+    "tasks/backlog.md": """\
+    - id: T-001
+      componente: checkout
+      tipo: ui
+      specs_referenciadas: []
+      status: pending
+    """,
+}
+BLOCO = "<!-- BEGIN arquitetura-agentes-ia{} (gerado) -->\ntexto\n<!-- END arquitetura-agentes-ia -->\n"
+
+# 28. bloco antigo -> aviso em stderr, stdout continua JSON limpo
+rodar("bloco do CLAUDE.md defasado avisa", {**UMA_TAREFA, "CLAUDE.md": BLOCO.format(" v1.0.6")},
+      "T-001", "planner", stderr_contem="v1.0.6")
+
+# 29. bloco sem marca de versao (gerado antes da v1.2.0) tambem avisa
+rodar("bloco sem marca de versao avisa", {**UMA_TAREFA, "CLAUDE.md": BLOCO.format("")},
+      "T-001", "planner", stderr_contem="sem marca de versão")
+
+# 30. bloco na versao corrente nao avisa — aviso que aparece sempre vira ruido
+# e para de ser lido, que e o mesmo que nao existir
+rodar("bloco atualizado nao avisa", {**UMA_TAREFA, "CLAUDE.md": BLOCO.format(" v" + VERSAO_ATUAL)},
+      "T-001", "planner", stderr_vazio=True)
 
 print()
 print(f"{total - len(falhas)}/{total} passaram")

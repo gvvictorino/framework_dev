@@ -597,6 +597,47 @@ def avisar_se_copia_local_desatualizada() -> None:
         )
 
 
+def avisar_se_bloco_claude_md_desatualizado() -> None:
+    """
+    O bloco gerado do CLAUDE.md carrega a versão do framework que o produziu. Ele contém as
+    INSTRUÇÕES DE FLUXO que a sessão principal segue — quando fica para trás, o projeto deixa
+    de usar capacidade que já existe no roteador, e nada acusa.
+
+    Medido na auditoria de 2026-09-24: um projeto com o bloco da v1.0.6 não sabia do modo de
+    seleção automática de tarefa entregue na v1.1.0, então a sessão continuava escolhendo a
+    tarefa por julgamento — exatamente o que aquela correção tinha removido. `bootstrap-project.sh`
+    detectava o marcador e preservava o bloco; `atualizar.sh` nunca olhou para projeto nenhum.
+
+    Como o aviso de cópia local, sai em STDERR: stdout é contrato.
+    """
+    claude_md = ROOT / "CLAUDE.md"
+    versao_path = Path(__file__).resolve().parent / "VERSION"
+    if not claude_md.exists() or not versao_path.exists():
+        return
+    try:
+        texto = claude_md.read_text(encoding="utf-8", errors="replace")
+        versao_framework = versao_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return
+
+    m = re.search(r"BEGIN arquitetura-agentes-ia(?:\s+v([0-9][0-9.]*))?", texto)
+    if m is None:
+        return  # projeto sem o bloco gerado — não é assunto deste aviso
+    no_bloco = m.group(1)
+    if no_bloco == versao_framework:
+        return
+
+    origem = f"v{no_bloco}" if no_bloco else "sem marca de versão (anterior à v1.2.0)"
+    print(
+        f"AVISO: o bloco da arquitetura no CLAUDE.md deste projeto está {origem}, e o framework "
+        f"está na v{versao_framework}. Esse bloco é a instrução de fluxo que a sessão principal "
+        f"segue: defasado, o projeto ignora capacidade que o roteador já tem. Para atualizar "
+        f"(preserva tudo fora dos marcadores, e guarda CLAUDE.md.bak):\n"
+        f"  $HOME/.claude-agent-framework/bootstrap-project.sh {ROOT}",
+        file=sys.stderr,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Ponto de entrada
 # ---------------------------------------------------------------------------
@@ -672,6 +713,7 @@ def main():
         sys.exit(1)
 
     avisar_se_copia_local_desatualizada()
+    avisar_se_bloco_claude_md_desatualizado()
 
     try:
         if len(sys.argv) == 1:

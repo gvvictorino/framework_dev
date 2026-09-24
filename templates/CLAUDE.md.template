@@ -1,4 +1,4 @@
-<!-- BEGIN arquitetura-agentes-ia (gerado por ~/.claude-agent-framework/bootstrap-project.sh — não edite manualmente entre estas marcações; rodar o script de novo detecta e não duplica) -->
+<!-- BEGIN arquitetura-agentes-ia v{{FRAMEWORK_VERSION}} (gerado por ~/.claude-agent-framework/bootstrap-project.sh — não edite manualmente entre estas marcações; para atualizar este bloco, rode o script de novo no projeto) -->
 
 # Instruções do projeto para a sessão principal do Claude Code
 

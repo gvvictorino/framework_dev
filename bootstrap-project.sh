@@ -6,7 +6,12 @@
 # só cria o que estiver faltando.
 #
 # Uso:
-#   ./bootstrap-project.sh <caminho-do-projeto> [--shared|--local]
+#   ./bootstrap-project.sh <caminho-do-projeto> [--shared|--local] [--atualizar-claude-md]
+#
+#   --atualizar-claude-md  se o projeto já tem o bloco da arquitetura numa versão anterior,
+#                       substitui o conteúdo ENTRE os marcadores sem perguntar, preservando
+#                       tudo fora deles e guardando CLAUDE.md.bak. Sem a flag, num terminal
+#                       o script pergunta; fora de um, só reporta.
 #
 #   --shared (padrão)  CLAUDE.md aponta para o decide.py compartilhado em
 #                       ~/.claude-agent-framework/decide.py (instalado por setup-machine.sh)
@@ -28,10 +33,21 @@ TEMPLATE="$SCRIPT_DIR/templates/CLAUDE.md.template"
 FRAMEWORK_DECIDE="$SCRIPT_DIR/decide.py"
 
 PROJETO="${1:-}"
-MODO="${2:---shared}"
+
+# Flags depois do caminho, em qualquer ordem. Antes o modo era estritamente posicional
+# (`${2:---shared}`), o que faria qualquer flag nova passada em $2 ser lida como modo.
+MODO="--shared"
+ATUALIZAR_BLOCO=false
+for arg in "${@:2}"; do
+  case "$arg" in
+    --shared|--local)        MODO="$arg" ;;
+    --atualizar-claude-md)   ATUALIZAR_BLOCO=true ;;
+    *) echo "Aviso: argumento desconhecido ignorado: $arg" >&2 ;;
+  esac
+done
 
 if [[ -z "$PROJETO" ]]; then
-  echo "Uso: ./bootstrap-project.sh <caminho-do-projeto> [--shared|--local]" >&2
+  echo "Uso: ./bootstrap-project.sh <caminho-do-projeto> [--shared|--local] [--atualizar-claude-md]" >&2
   exit 1
 fi
 
@@ -136,15 +152,82 @@ else
 fi
 
 MARKER_BEGIN="<!-- BEGIN arquitetura-agentes-ia"
+MARKER_END="<!-- END arquitetura-agentes-ia -->"
+VERSAO_FRAMEWORK="$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo 'desconhecida')"
+
+# O bloco carrega a versão do framework que o gerou. Sem essa marca, um projeto ficava com as
+# instruções de fluxo de uma versão antiga para sempre, em silêncio: o script detectava o
+# marcador e preservava o bloco, e nada mais no sistema olhava para ele. A auditoria de
+# 2026-09-24 mediu o efeito — um projeto rodando o bloco da v1.0.6 não sabia da seleção
+# automática de tarefa entregue na v1.1.0, e a sessão principal seguia escolhendo por
+# julgamento, que é exatamente o que aquela correção removeu.
+renderizar_template() {
+  sed -e "s|{{DECIDE_PY_CMD}}|$DECIDE_CMD|" \
+      -e "s|{{FRAMEWORK_VERSION}}|$VERSAO_FRAMEWORK|" "$TEMPLATE"
+}
+
+# Substitui SÓ o conteúdo entre os marcadores, preservando tudo fora deles — o arquivo ao redor
+# é do usuário e costuma ser a maior parte dele.
+substituir_bloco() {
+  local renderizado="$1"
+  "$PY_BIN" - "$renderizado" <<'PYEOF'
+import sys, pathlib
+INICIO = "<!-- BEGIN arquitetura-agentes-ia"
+FIM = "<!-- END arquitetura-agentes-ia -->"
+novo_bloco = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").strip("\n")
+alvo = pathlib.Path("CLAUDE.md")
+texto = alvo.read_text(encoding="utf-8")
+i = texto.find(INICIO)
+j = texto.find(FIM)
+if i == -1 or j == -1 or j < i:
+    sys.exit("  ERRO: marcadores ausentes ou fora de ordem — nada foi alterado.")
+alvo.write_text(texto[:i] + novo_bloco + texto[j + len(FIM):], encoding="utf-8")
+PYEOF
+}
 
 if [[ -f "CLAUDE.md" ]] && grep -q "$MARKER_BEGIN" CLAUDE.md 2>/dev/null; then
-  echo "  = CLAUDE.md já contém o bloco da arquitetura de agentes (mantido, nada duplicado)"
+  versao_no_bloco="$(grep -o 'BEGIN arquitetura-agentes-ia v[0-9][0-9.]*' CLAUDE.md \
+                     | head -1 | sed 's/.* v//')"
+
+  if [[ "$versao_no_bloco" == "$VERSAO_FRAMEWORK" ]]; then
+    echo "  = CLAUDE.md já tem o bloco da arquitetura na v$VERSAO_FRAMEWORK (nada a fazer)"
+  else
+    if [[ -z "$versao_no_bloco" ]]; then
+      echo "  ! CLAUDE.md tem o bloco da arquitetura SEM marca de versão (gerado antes da v1.2.0)."
+    else
+      echo "  ! CLAUDE.md tem o bloco da arquitetura na v$versao_no_bloco; o framework está na v$VERSAO_FRAMEWORK."
+    fi
+    echo "    O bloco traz as instruções de fluxo que a sessão principal segue. Desatualizado,"
+    echo "    o projeto deixa de usar capacidade que já existe no roteador — sem nenhum erro."
+
+    aplicar=false
+    if [[ "$ATUALIZAR_BLOCO" == true ]]; then
+      aplicar=true   # pedido explícito na linha de comando; não pergunta
+    elif [[ ! -t 0 ]]; then
+      # Sem terminal não há como confirmar, e reescrever o CLAUDE.md do usuário em silêncio
+      # seria a única operação destrutiva deste script sem ninguém ver.
+      echo "    Execução não interativa: nada foi alterado. Rode num terminal, ou passe"
+      echo "    --atualizar-claude-md para atualizar sem perguntar."
+    else
+      read -r -p "    Atualizar o bloco agora (o conteúdo fora dos marcadores é preservado)? [s/N] " resp
+      if [[ "$resp" =~ ^[sS]$ ]]; then aplicar=true; else echo "    = bloco mantido como está"; fi
+    fi
+
+    if [[ "$aplicar" == true ]]; then
+      cp CLAUDE.md CLAUDE.md.bak
+      TMP_BLOCO="$(mktemp)"
+      renderizar_template > "$TMP_BLOCO"
+      substituir_bloco "$TMP_BLOCO"
+      rm -f "$TMP_BLOCO"
+      echo "    + bloco atualizado para a v$VERSAO_FRAMEWORK (cópia anterior em CLAUDE.md.bak)"
+    fi
+  fi
 elif [[ -f "CLAUDE.md" ]]; then
   printf '\n' >> CLAUDE.md
-  sed "s|{{DECIDE_PY_CMD}}|$DECIDE_CMD|" "$TEMPLATE" >> CLAUDE.md
+  renderizar_template >> CLAUDE.md
   echo "  + bloco da arquitetura ACRESCENTADO ao CLAUDE.md existente (conteúdo anterior preservado)"
 else
-  sed "s|{{DECIDE_PY_CMD}}|$DECIDE_CMD|" "$TEMPLATE" > CLAUDE.md
+  renderizar_template > CLAUDE.md
   echo "  + CLAUDE.md criado (comando de decisão: $DECIDE_CMD)"
 fi
 
