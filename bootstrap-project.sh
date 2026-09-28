@@ -186,8 +186,12 @@ PYEOF
 }
 
 if [[ -f "CLAUDE.md" ]] && grep -q "$MARKER_BEGIN" CLAUDE.md 2>/dev/null; then
-  versao_no_bloco="$(grep -o 'BEGIN arquitetura-agentes-ia v[0-9][0-9.]*' CLAUDE.md \
-                     | head -1 | sed 's/.* v//')"
+  # O `|| true` nao e decorativo: sob `set -euo pipefail`, um `grep` que nao casa sai 1, o
+  # pipefail propaga e o `set -e` derruba o script. E o bloco SEM marca de versao — o caso
+  # legado, que e justamente o que esta deteccao existe para pegar — e exatamente o que nao
+  # casa. Sem isso, o script morre no unico cenario em que precisa agir.
+  versao_no_bloco="$(grep -o 'BEGIN arquitetura-agentes-ia v[0-9][0-9.]*' CLAUDE.md 2>/dev/null \
+                     | head -1 | sed 's/.* v//' || true)"
 
   if [[ "$versao_no_bloco" == "$VERSAO_FRAMEWORK" ]]; then
     echo "  = CLAUDE.md já tem o bloco da arquitetura na v$VERSAO_FRAMEWORK (nada a fazer)"

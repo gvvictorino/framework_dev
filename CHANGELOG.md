@@ -11,6 +11,41 @@ mudança manual), quem aplica é responsável por: incrementar `VERSION` e acres
 aqui, no mesmo commit. Sem isso, `atualizar.sh` não tem o que reportar ao rodar em outra
 máquina.
 
+## [1.2.1] — 2026-09-28
+
+Correção de um bug introduzido pela v1.2.0, descoberto ao aplicar a atualização no primeiro
+projeto real.
+
+`bootstrap-project.sh` abortava com exit 1, sem mensagem, ao encontrar um bloco **sem marca de
+versão** — que é exatamente o caso legado que a v1.2.0 existe para corrigir. A linha que extrai
+a versão do bloco é uma substituição de comando com pipe:
+
+```bash
+versao_no_bloco="$(grep -o '...' CLAUDE.md | head -1 | sed 's/.* v//')"
+```
+
+Sob `set -euo pipefail`, um `grep` que não casa sai 1, o `pipefail` propaga o status ao pipeline
+inteiro, e o `set -e` derruba o script na atribuição. Bloco sem marca é precisamente o que não
+casa. O script morria antes de imprimir qualquer coisa sobre o `CLAUDE.md`, então o sintoma era
+um bootstrap que parecia ter rodado até o fim.
+
+- `|| true` no fim do pipeline, com o porquê no comentário — `|| true` solto é o tipo de coisa
+  que alguém "limpa" depois por parecer supérfluo.
+
+Por que passou pela verificação da v1.2.0: os três sandboxes usaram bloco `v1.0.6`, que casa no
+grep. O caminho sem marca foi testado **só** na suíte do `decide.py`, que é Python e não passa
+pelo shell. As duas metades estavam certas e o defeito vivia na interseção — mesma forma do bug
+da v1.1.1, e da P1 da auditoria de 19/09.
+
+Isso já é a segunda vez em duas versões que um defeito de shell escapa por não haver como
+testá-lo: `decide.py` tem 30 casos de regressão, e `bootstrap-project.sh`, `setup-machine.sh` e
+`atualizar.sh` têm zero. Fica registrado como candidato a proposta na próxima auditoria — os
+casos desta correção (bloco sem marca, com marca antiga, com marca em dia) são exatamente o
+formato de uma suíte de shell.
+
+Sem impacto em projetos: a v1.2.0 não conseguia atualizar bloco legado nenhum, então não existe
+projeto atualizado incorretamente — existe projeto não atualizado.
+
 ## [1.2.0] — 2026-09-24
 
 Aplica a P1 da auditoria de 2026-09-24: o bloco gerado do `CLAUDE.md` passa a ter versão, a
