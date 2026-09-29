@@ -155,6 +155,18 @@ MARKER_BEGIN="<!-- BEGIN arquitetura-agentes-ia"
 MARKER_END="<!-- END arquitetura-agentes-ia -->"
 VERSAO_FRAMEWORK="$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo 'desconhecida')"
 
+# O que decide se o bloco está defasado é o HASH DO TEMPLATE, não a VERSION do framework.
+# Amarrar à VERSION fazia todo release PATCH declarar defasado todo projeto e reescrever o
+# CLAUDE.md dele à toa: a v1.2.1 mexeu só neste script, o template não mudou uma vírgula, e
+# ainda assim o aviso disparava. Aviso que aparece sempre para de ser lido — vira o mesmo
+# silêncio que a detecção existe para acabar. A versão continua no marcador, para humano ler.
+#
+# Hash calculado pelo Python, e não por sha256sum, para ser bit a bit o mesmo cálculo que
+# decide.py faz — duas implementações do "mesmo" hash é como se cria divergência silenciosa.
+TEMPLATE_HASH="$("$PY_BIN" -c \
+  "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest()[:8])" \
+  "$TEMPLATE")"
+
 # O bloco carrega a versão do framework que o gerou. Sem essa marca, um projeto ficava com as
 # instruções de fluxo de uma versão antiga para sempre, em silêncio: o script detectava o
 # marcador e preservava o bloco, e nada mais no sistema olhava para ele. A auditoria de
@@ -163,7 +175,8 @@ VERSAO_FRAMEWORK="$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo 'desconhecida'
 # julgamento, que é exatamente o que aquela correção removeu.
 renderizar_template() {
   sed -e "s|{{DECIDE_PY_CMD}}|$DECIDE_CMD|" \
-      -e "s|{{FRAMEWORK_VERSION}}|$VERSAO_FRAMEWORK|" "$TEMPLATE"
+      -e "s|{{FRAMEWORK_VERSION}}|$VERSAO_FRAMEWORK|" \
+      -e "s|{{TEMPLATE_HASH}}|$TEMPLATE_HASH|" "$TEMPLATE"
 }
 
 # Substitui SÓ o conteúdo entre os marcadores, preservando tudo fora deles — o arquivo ao redor
@@ -186,20 +199,21 @@ PYEOF
 }
 
 if [[ -f "CLAUDE.md" ]] && grep -q "$MARKER_BEGIN" CLAUDE.md 2>/dev/null; then
-  # O `|| true` nao e decorativo: sob `set -euo pipefail`, um `grep` que nao casa sai 1, o
-  # pipefail propaga e o `set -e` derruba o script. E o bloco SEM marca de versao — o caso
-  # legado, que e justamente o que esta deteccao existe para pegar — e exatamente o que nao
-  # casa. Sem isso, o script morre no unico cenario em que precisa agir.
-  versao_no_bloco="$(grep -o 'BEGIN arquitetura-agentes-ia v[0-9][0-9.]*' CLAUDE.md 2>/dev/null \
-                     | head -1 | sed 's/.* v//' || true)"
+  # Os `|| true` nao sao decorativos: sob `set -euo pipefail`, um `grep` que nao casa sai 1, o
+  # pipefail propaga e o `set -e` derruba o script. E bloco sem marca — o caso legado, que e
+  # justamente o que esta deteccao existe para pegar — e exatamente o que nao casa. Sem isso,
+  # o script morre no unico cenario em que precisa agir (bug da v1.2.0, corrigido na v1.2.1).
+  linha_marcador="$(grep -m1 'BEGIN arquitetura-agentes-ia' CLAUDE.md 2>/dev/null || true)"
+  hash_no_bloco="$(printf '%s' "$linha_marcador" | grep -o 'h:[0-9a-f]\{8\}' | sed 's/h://' || true)"
+  versao_no_bloco="$(printf '%s' "$linha_marcador" | grep -o ' v[0-9][0-9.]*' | head -1 | sed 's/ v//' || true)"
 
-  if [[ "$versao_no_bloco" == "$VERSAO_FRAMEWORK" ]]; then
-    echo "  = CLAUDE.md já tem o bloco da arquitetura na v$VERSAO_FRAMEWORK (nada a fazer)"
+  if [[ "$hash_no_bloco" == "$TEMPLATE_HASH" ]]; then
+    echo "  = CLAUDE.md já tem o bloco da arquitetura em dia (v$versao_no_bloco, conteúdo idêntico)"
   else
-    if [[ -z "$versao_no_bloco" ]]; then
-      echo "  ! CLAUDE.md tem o bloco da arquitetura SEM marca de versão (gerado antes da v1.2.0)."
+    if [[ -z "$hash_no_bloco" ]]; then
+      echo "  ! CLAUDE.md tem o bloco da arquitetura sem marca de conteúdo (gerado antes da v1.2.2)."
     else
-      echo "  ! CLAUDE.md tem o bloco da arquitetura na v$versao_no_bloco; o framework está na v$VERSAO_FRAMEWORK."
+      echo "  ! CLAUDE.md tem o bloco da arquitetura defasado (v$versao_no_bloco; o framework está na v$VERSAO_FRAMEWORK)."
     fi
     echo "    O bloco traz as instruções de fluxo que a sessão principal segue. Desatualizado,"
     echo "    o projeto deixa de usar capacidade que já existe no roteador — sem nenhum erro."

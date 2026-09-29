@@ -72,6 +72,7 @@ gerar tarefas nesse formato, o script funciona sem alteração:
 import sys
 import json
 import re
+import hashlib
 from pathlib import Path
 
 try:
@@ -599,9 +600,15 @@ def avisar_se_copia_local_desatualizada() -> None:
 
 def avisar_se_bloco_claude_md_desatualizado() -> None:
     """
-    O bloco gerado do CLAUDE.md carrega a versão do framework que o produziu. Ele contém as
-    INSTRUÇÕES DE FLUXO que a sessão principal segue — quando fica para trás, o projeto deixa
-    de usar capacidade que já existe no roteador, e nada acusa.
+    O bloco gerado do CLAUDE.md carrega a versão do framework que o produziu e um hash do
+    template que o gerou. Ele contém as INSTRUÇÕES DE FLUXO que a sessão principal segue —
+    quando fica para trás, o projeto deixa de usar capacidade que já existe no roteador.
+
+    Quem decide "defasado" é o HASH, não a versão. Amarrar à VERSION (como a v1.2.0 fazia)
+    disparava o aviso a cada release PATCH, mesmo quando o template não tinha mudado: a v1.2.1
+    mexeu só no bootstrap e ainda assim todo projeto era mandado reescrever o CLAUDE.md para
+    trocar uma string. Aviso que aparece sempre para de ser lido, e vira o mesmo silêncio que
+    esta checagem existe para acabar.
 
     Medido na auditoria de 2026-09-24: um projeto com o bloco da v1.0.6 não sabia do modo de
     seleção automática de tarefa entregue na v1.1.0, então a sessão continuava escolhendo a
@@ -620,19 +627,37 @@ def avisar_se_bloco_claude_md_desatualizado() -> None:
     except OSError:
         return
 
-    m = re.search(r"BEGIN arquitetura-agentes-ia(?:\s+v([0-9][0-9.]*))?", texto)
+    m = re.search(
+        r"BEGIN arquitetura-agentes-ia(?:\s+v([0-9][0-9.]*))?(?:\s+h:([0-9a-f]{8}))?", texto
+    )
     if m is None:
         return  # projeto sem o bloco gerado — não é assunto deste aviso
-    no_bloco = m.group(1)
-    if no_bloco == versao_framework:
+
+    template = Path(__file__).resolve().parent / "templates" / "CLAUDE.md.template"
+    if not template.exists():
+        # Modo --local: a cópia do roteador vive no projeto, sem a pasta templates/ ao lado.
+        # Sem o template não há com o que comparar, e comparar versões no lugar disso seria
+        # voltar ao ruído que esta checagem deixou de produzir na v1.2.2.
+        return
+    try:
+        hash_atual = hashlib.sha256(template.read_bytes()).hexdigest()[:8]
+    except OSError:
         return
 
-    origem = f"v{no_bloco}" if no_bloco else "sem marca de versão (anterior à v1.2.0)"
+    versao_no_bloco, hash_no_bloco = m.group(1), m.group(2)
+    if hash_no_bloco == hash_atual:
+        return  # conteúdo idêntico: a versão pode diferir, o bloco não
+
+    if hash_no_bloco is None:
+        origem = "sem marca de conteúdo (gerado antes da v1.2.2)"
+    else:
+        origem = f"na v{versao_no_bloco}" if versao_no_bloco else "numa versão anterior"
     print(
-        f"AVISO: o bloco da arquitetura no CLAUDE.md deste projeto está {origem}, e o framework "
-        f"está na v{versao_framework}. Esse bloco é a instrução de fluxo que a sessão principal "
-        f"segue: defasado, o projeto ignora capacidade que o roteador já tem. Para atualizar "
-        f"(preserva tudo fora dos marcadores, e guarda CLAUDE.md.bak):\n"
+        f"AVISO: o bloco da arquitetura no CLAUDE.md deste projeto está {origem}, e o conteúdo "
+        f"dele difere do template do framework (v{versao_framework}). Esse bloco é a instrução "
+        f"de fluxo que a sessão principal segue: defasado, o projeto ignora capacidade que o "
+        f"roteador já tem. Para atualizar (preserva tudo fora dos marcadores, e guarda "
+        f"CLAUDE.md.bak):\n"
         f"  $HOME/.claude-agent-framework/bootstrap-project.sh {ROOT}",
         file=sys.stderr,
     )

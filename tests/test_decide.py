@@ -463,12 +463,18 @@ rodar("indice com barra invertida ainda casa", {
 }, "T-002", "escalar_humano")
 
 # ---------------------------------------------------------------------------
-# 28-30. Bloco do CLAUDE.md defasado (auditoria de 2026-09-24). O bloco carrega
-# as instrucoes de fluxo que a sessao principal segue; quando fica para tras, o
-# projeto ignora capacidade que o roteador ja tem, e nada acusava.
+# 28-31. Bloco do CLAUDE.md defasado (auditoria de 2026-09-24, refinado na
+# v1.2.2). O bloco carrega as instrucoes de fluxo que a sessao principal segue.
+# Quem decide "defasado" e o HASH DO TEMPLATE, nao a VERSION: amarrar a versao
+# fazia todo release PATCH mandar todo projeto reescrever o CLAUDE.md para
+# trocar uma string, e aviso que aparece sempre para de ser lido.
 # ---------------------------------------------------------------------------
 
+import hashlib
 VERSAO_ATUAL = (Path(DECIDE).parent / "VERSION").read_text(encoding="utf-8").strip()
+TEMPLATE = Path(DECIDE).parent / "templates" / "CLAUDE.md.template"
+HASH_ATUAL = hashlib.sha256(TEMPLATE.read_bytes()).hexdigest()[:8]
+
 UMA_TAREFA = {
     "tasks/backlog.md": """\
     - id: T-001
@@ -478,19 +484,29 @@ UMA_TAREFA = {
       status: pending
     """,
 }
-BLOCO = "<!-- BEGIN arquitetura-agentes-ia{} (gerado) -->\ntexto\n<!-- END arquitetura-agentes-ia -->\n"
 
-# 28. bloco antigo -> aviso em stderr, stdout continua JSON limpo
-rodar("bloco do CLAUDE.md defasado avisa", {**UMA_TAREFA, "CLAUDE.md": BLOCO.format(" v1.0.6")},
-      "T-001", "planner", stderr_contem="v1.0.6")
+def bloco(marca):
+    return f"<!-- BEGIN arquitetura-agentes-ia{marca} (gerado) -->\ntexto\n<!-- END arquitetura-agentes-ia -->\n"
 
-# 29. bloco sem marca de versao (gerado antes da v1.2.0) tambem avisa
-rodar("bloco sem marca de versao avisa", {**UMA_TAREFA, "CLAUDE.md": BLOCO.format("")},
-      "T-001", "planner", stderr_contem="sem marca de versão")
+# 28. versao ANTIGA mas conteudo identico -> NAO avisa. E o caso que a v1.2.2
+# corrige: antes, cada PATCH do framework disparava aviso a toa.
+rodar("versao antiga com conteudo em dia nao avisa",
+      {**UMA_TAREFA, "CLAUDE.md": bloco(f" v0.9.9 h:{HASH_ATUAL}")},
+      "T-001", "planner", stderr_vazio=True)
 
-# 30. bloco na versao corrente nao avisa — aviso que aparece sempre vira ruido
-# e para de ser lido, que e o mesmo que nao existir
-rodar("bloco atualizado nao avisa", {**UMA_TAREFA, "CLAUDE.md": BLOCO.format(" v" + VERSAO_ATUAL)},
+# 29. hash diferente -> avisa, mesmo com a versao corrente no marcador
+rodar("conteudo diferente avisa",
+      {**UMA_TAREFA, "CLAUDE.md": bloco(" v9.9.9 h:00000000")},
+      "T-001", "planner", stderr_contem="difere do template")
+
+# 30. bloco sem marca de conteudo (gerado antes da v1.2.2) -> avisa
+rodar("bloco sem marca de conteudo avisa",
+      {**UMA_TAREFA, "CLAUDE.md": bloco(" v1.2.1")},
+      "T-001", "planner", stderr_contem="sem marca de conteúdo")
+
+# 31. bloco em dia em tudo -> silencio
+rodar("bloco em dia nao avisa",
+      {**UMA_TAREFA, "CLAUDE.md": bloco(f" v{VERSAO_ATUAL} h:{HASH_ATUAL}")},
       "T-001", "planner", stderr_vazio=True)
 
 print()

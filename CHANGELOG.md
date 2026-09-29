@@ -11,6 +11,43 @@ mudança manual), quem aplica é responsável por: incrementar `VERSION` e acres
 aqui, no mesmo commit. Sem isso, `atualizar.sh` não tem o que reportar ao rodar em outra
 máquina.
 
+## [1.2.2] — 2026-09-28
+
+Corrige o critério de defasagem do bloco do `CLAUDE.md`. Quem decide agora é o **hash do
+template**, não a `VERSION` do framework.
+
+A v1.2.0 amarrou a detecção à `VERSION`. Consequência, medida ao aplicar a v1.2.1 no primeiro
+projeto real: aquele release mexeu **só** em `bootstrap-project.sh` — o template não mudou uma
+vírgula — e ainda assim todo projeto foi declarado defasado, avisado a cada chamada de
+`decide.py`, e teve o `CLAUDE.md` reescrito. O diff foi de uma linha: a string de versão.
+
+Isso contradiz o que a própria entrada da v1.2.0 registrou ("aviso que aparece sempre vira
+ruído, para de ser lido, e volta a ser o mesmo silêncio que existia antes"). Todo release PATCH
+produziria essa reescrita, e o aviso — que existe para ser lido nas poucas vezes em que importa
+— seria treinado a ser ignorado.
+
+- O marcador passa a carregar também `h:<8 hex>`, o sha256 do **fonte** do template (com os
+  placeholders, não o texto renderizado), truncado. A `VERSION` continua ali para leitura
+  humana, mas não é mais o gatilho.
+- `bootstrap-project.sh` e `decide.py` comparam o hash. Versão antiga com conteúdo idêntico é
+  reportada como em dia e não sofre reescrita.
+- O hash é calculado pelo mesmo `hashlib` nos dois lados — no shell via `$PY_BIN`, não via
+  `sha256sum`. Duas implementações do "mesmo" hash é como se fabrica divergência silenciosa.
+- Em modo `--local`, onde a cópia do roteador vive no projeto sem a pasta `templates/` ao lado,
+  a checagem simplesmente não roda. Antes ela comparava versões que não se correspondiam.
+
+Suíte: 30 → 31 casos. Os três antigos foram reescritos, porque testavam o critério errado. O
+caso que importa é o novo: **versão antiga com hash correto não avisa**.
+
+### Migração
+
+Bloco gerado antes desta versão não tem `h:` e será reportado como "sem marca de conteúdo" —
+uma última atualização por projeto, e a partir daí só quando o template mudar de verdade:
+
+```bash
+~/.claude-agent-framework/bootstrap-project.sh <caminho-do-projeto>
+```
+
 ## [1.2.1] — 2026-09-28
 
 Correção de um bug introduzido pela v1.2.0, descoberto ao aplicar a atualização no primeiro
